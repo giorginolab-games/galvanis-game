@@ -6,6 +6,8 @@ export const WALL_THICKNESS = 60;
 export const BAND_WALL_THICKNESS = 12;
 export const BAND_EPSILON = 2;
 export const CONTACT_EPSILON = 1;
+// Cost multiplier for the empty gap between a band wall and the first/last block, so paths prefer blocks touching the wall.
+export const VOID_PENALTY = 10;
 
 export const SHAPES = {
   I: [

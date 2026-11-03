@@ -1,5 +1,5 @@
 import * as Matter from "matter-js";
-import { BAND_EPSILON, BAND_WALL_THICKNESS, CONTACT_EPSILON } from "./constants";
+import { BAND_EPSILON, BAND_WALL_THICKNESS, VOID_PENALTY, CONTACT_EPSILON } from "./constants";
 import { getTetrominoParts, isTetrominoBody } from "./pieces";
 import type { PathNode, StageSize } from "./types";
 
@@ -35,7 +35,7 @@ export function findLeftRightPath(
   const done = new Array<boolean>(nodes.length).fill(false);
 
   for (const id of startIds) {
-    dist[id] = Math.max(0, nodes[id].cx - leftX);
+    dist[id] = entryCost(nodes[id].bounds.min.x - leftX, nodes[id].cx - nodes[id].bounds.min.x);
   }
 
   for (;;) {
@@ -67,7 +67,7 @@ export function findLeftRightPath(
   let best = Infinity;
 
   for (const id of goalIds) {
-    const total = dist[id] + Math.max(0, rightX - nodes[id].cx);
+    const total = dist[id] + entryCost(rightX - nodes[id].bounds.max.x, nodes[id].bounds.max.x - nodes[id].cx);
 
     if (total < best) {
       best = total;
@@ -127,6 +127,11 @@ export function jitteredPolyline(points: Array<{ x: number; y: number }>): Array
   }
 
   return output;
+}
+
+/** Cost of reaching a block from a band wall: the void gap is penalized, the run inside the block is not. */
+function entryCost(gap: number, inside: number): number {
+  return Math.max(0, gap) * VOID_PENALTY + inside;
 }
 
 /** Returns the leading `fraction` (0..1) of a polyline by arc length. */
