@@ -1,7 +1,7 @@
 import * as Matter from "matter-js";
 import { AIR_BREAKDOWN_KV_PER_PX, AIR_GAP_WEIGHT, BAND_EPSILON, BAND_WALL_THICKNESS, CONTACT_EPSILON } from "./constants";
 import { getTetrominoParts, isTetrominoBody } from "./pieces";
-import type { AirArc, PathNode, RouteSegment, StageSize } from "./types";
+import type { Bolt, AirArc, PathNode, RouteSegment, StageSize } from "./types";
 
 /**
  * Finds the discharge path between the left and right band walls.
@@ -15,6 +15,7 @@ export function findLeftRightPath(
   viewport: StageSize,
   bandHalfWidth: number,
   voltageKv: number,
+  excluded: ReadonlySet<Matter.Body> = new Set(),
 ): { pathNodes: PathNode[]; leftX: number; rightX: number; totalGap: number; arcs: AirArc[]; route: RouteSegment[] } | null {
   const center = viewport.width / 2;
   const leftX = center - bandHalfWidth;
@@ -23,7 +24,7 @@ export function findLeftRightPath(
   // Electrodes are the band walls' inner faces.
   const leftFace = leftX + BAND_WALL_THICKNESS / 2;
   const rightFace = rightX - BAND_WALL_THICKNESS / 2;
-  const nodes = gatherConductiveNodes(world, leftX, rightX);
+  const nodes = gatherConductiveNodes(world, leftX, rightX, excluded);
 
   if (nodes.length === 0) {
     return null;
@@ -178,6 +179,41 @@ export function findLeftRightPath(
     arcs,
     route,
   };
+}
+
+/**
+ * Finds every body-disjoint left-right path the voltage can break down (a high-voltage pulse clears several
+ * "rows" at once). Paths are found greedily, cheapest first; each path's tetrominoes are then taken out of play.
+ */
+export function findAllLeftRightPaths(
+  world: Matter.World,
+  viewport: StageSize,
+  bandHalfWidth: number,
+  voltageKv: number,
+  excluded: ReadonlySet<Matter.Body> = new Set(),
+): { bolts: Bolt[]; leftX: number; rightX: number } | null {
+  const skip = new Set<Matter.Body>(excluded);
+  const bolts: Bolt[] = [];
+  let leftX = 0;
+  let rightX = 0;
+
+  for (;;) {
+    const result = findLeftRightPath(world, viewport, bandHalfWidth, voltageKv, skip);
+
+    if (!result) {
+      break;
+    }
+
+    bolts.push({ pathNodes: result.pathNodes, arcs: result.arcs, route: result.route });
+    leftX = result.leftX;
+    rightX = result.rightX;
+
+    for (const node of result.pathNodes) {
+      skip.add(node.parent);
+    }
+  }
+
+  return bolts.length > 0 ? { bolts, leftX, rightX } : null;
 }
 
 export function jitteredPolyline(points: Array<{ x: number; y: number }>, amplitudeScale = 1): Array<{ x: number; y: number }> {
@@ -363,11 +399,11 @@ function isBlocked(from: Point, to: Point, insulators: Point[][]): boolean {
   );
 }
 
-function gatherConductiveNodes(world: Matter.World, leftX: number, rightX: number): PathNode[] {
+function gatherConductiveNodes(world: Matter.World, leftX: number, rightX: number, excluded: ReadonlySet<Matter.Body>): PathNode[] {
   const nodes: PathNode[] = [];
 
   for (const body of Matter.Composite.allBodies(world)) {
-    if (!isTetrominoBody(body) || body.plugin.isInsulating) {
+    if (!isTetrominoBody(body) || body.plugin.isInsulating || excluded.has(body)) {
       continue;
     }
 

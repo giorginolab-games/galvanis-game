@@ -45,15 +45,20 @@ export interface RouteSegment {
   air: boolean;
 }
 
+/** One discharge path: the blocks it crosses, its air-gap arcs and its drawn route. */
+export interface Bolt {
+  pathNodes: PathNode[];
+  arcs: AirArc[];
+  route: RouteSegment[];
+}
+
 export interface FlashState {
-  points: Array<{ x: number; y: number }> | null;
   until: number;
   startedAt: number;
   leftX: number;
   rightX: number;
-  pathNodes: PathNode[] | null;
-  arcs: AirArc[];
-  route: RouteSegment[];
+  bolts: Bolt[] | null;
+  high: boolean;
 }
 
 export interface RangeControl {
@@ -75,6 +80,8 @@ export interface UiRefs {
   pauseBtn: HTMLButtonElement;
   spawnBtn: HTMLButtonElement;
   scanBtn: HTMLButtonElement;
+  pulseCount: HTMLElement;
+  pulseBar: HTMLElement;
   gravityY: RangeControl;
   friction: RangeControl;
   rest: RangeControl;
@@ -83,6 +90,7 @@ export interface UiRefs {
   insulatingChance: RangeControl;
   bandX: RangeControl;
   voltage: RangeControl;
+  highVoltage: RangeControl;
   sleeping: ToggleControl;
   freezeBlocks: ToggleControl;
   showBand: ToggleControl;

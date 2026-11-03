@@ -11,6 +11,11 @@ export const AIR_BREAKDOWN_KV_PER_PX = 3;
 // The discharge picks the path with the least total air first, then the shortest metal run; this weights air over length.
 export const AIR_GAP_WEIGHT = 10000;
 
+// High-voltage pulse (Enter): limited charges, recharged by clearing lines.
+export const PULSE_MAX_CHARGES = 3;
+export const PULSE_START_CHARGES = 1;
+export const PULSE_RECHARGE_PER_LINE = 0.5;
+
 export const SHAPES = {
   I: [
     [0, 0],

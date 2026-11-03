@@ -27,6 +27,7 @@
             <span class="kbd">↑</span> rotate
             <span class="kbd">↓</span> soft drop
             <span class="kbd">Space</span> hard drop
+            <span class="kbd">Enter</span> high-V pulse
           </div>
           <div class="row">
             <button class="btn" id="resetBtn" type="button">Reset</button>
@@ -37,9 +38,13 @@
           <div class="row stat">
             Pieces: <span id="pieceCount">0</span> | Active: <span id="activeName">-</span>
           </div>
+          <div class="row stat">
+            Pulses: <span id="pulseCount">1.0</span> / 3
+            <span class="pulse-bar"><span id="pulseBar" class="pulse-bar-fill"></span></span>
+          </div>
           <div class="row stat">State: <span id="gameState">Running</span></div>
           <div class="footer">
-            Conductive paths that bridge the left and right band edges flash, then burn away.
+            Play runs at low voltage: a conductive path bridging the band edges burns away when a piece lands. Press Enter for a high-voltage pulse that can arc across bigger gaps and burn several paths at once. Pulses are limited; each cleared line recharges half a pulse.
           </div>
         </section>
 
@@ -87,8 +92,12 @@
             <span id="bandXVal" class="stat">200</span>
           </div>
           <div class="row">
-            <label>Voltage (kV): <input id="voltage" type="range" min="0" max="300" step="3" value="45" /></label>
+            <label>Low voltage (kV): <input id="voltage" type="range" min="0" max="300" step="3" value="45" /></label>
             <span id="voltageVal" class="stat">45</span>
+          </div>
+          <div class="row">
+            <label>High voltage (kV): <input id="highVoltage" type="range" min="0" max="600" step="3" value="150" /></label>
+            <span id="highVoltageVal" class="stat">150</span>
           </div>
           <div class="row">
             <label><input id="showBand" type="checkbox" checked /> Show band &amp; boundaries</label>

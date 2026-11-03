@@ -4,15 +4,18 @@ import {
   BAND_WALL_THICKNESS,
   FLASH_DURATION_MS,
   FLASH_TIMEOUT_BUFFER_MS,
+  PULSE_MAX_CHARGES,
+  PULSE_RECHARGE_PER_LINE,
+  PULSE_START_CHARGES,
   SETTLE_CONFIRM_MS,
   SPAWN_Y,
   TETROMINO_NAMES,
   WALL_THICKNESS,
 } from "./constants";
 import { getUiRefs, syncLabels } from "./dom";
-import { findLeftRightPath, jitteredPolyline, polylineLength, truncatePolyline } from "./pathfinding";
+import { findAllLeftRightPaths, findLeftRightPath, jitteredPolyline, polylineLength, truncatePolyline } from "./pathfinding";
 import { freezeTetromino, isTetrominoBody, makeTetromino, sleepTetromino, wakeTetromino } from "./pieces";
-import type { AirArc, FlashState, PathNode, StageSize, TetrominoBody, TetrominoName, UiRefs } from "./types";
+import type { AirArc, Bolt, FlashState, PathNode, StageSize, TetrominoBody, TetrominoName, UiRefs } from "./types";
 
 type BandWalls = {
   left: Matter.Body | null;
@@ -38,7 +41,8 @@ export class GalvanisGame {
   private isResolvingTurn = false;
   private isSettlingAfterFlash = false;
   private settledSince: number | null = null;
-  private flash: FlashState = { points: null, until: 0, startedAt: 0, leftX: 0, rightX: 0, pathNodes: null, arcs: [], route: [] };
+  private pulseCharges = PULSE_START_CHARGES;
+  private flash: FlashState = { until: 0, startedAt: 0, leftX: 0, rightX: 0, bolts: null, high: false };
   private flashTimer: number | null = null;
   private resizeObserver: ResizeObserver | null = null;
 
@@ -51,6 +55,11 @@ export class GalvanisGame {
 
     if (event.code === "Space") {
       this.hardDrop();
+    }
+
+    if (event.code === "Enter" && !event.repeat) {
+      event.preventDefault();
+      this.firePulse();
     }
   };
 
@@ -69,7 +78,7 @@ export class GalvanisGame {
 
     const now = performance.now();
 
-    if (this.flash.points && now >= this.flash.until) {
+    if (this.flash.bolts && now >= this.flash.until) {
       this.finishFlash();
     }
 
@@ -90,7 +99,7 @@ export class GalvanisGame {
       } else {
         this.settledSince = null;
       }
-    } else if (this.isResolvingTurn && !this.flash.points && !this.activePiece) {
+    } else if (this.isResolvingTurn && !this.flash.bolts && !this.activePiece) {
       this.resumeAfterTurnResolution();
     }
 
@@ -174,8 +183,10 @@ export class GalvanisGame {
       context.restore();
     }
 
-    if (this.flash.pathNodes && performance.now() < this.flash.until) {
-      this.drawConductionPath(context, this.flash.pathNodes);
+    if (this.flash.bolts && performance.now() < this.flash.until) {
+      for (const bolt of this.flash.bolts) {
+        this.drawConductionPath(context, bolt);
+      }
     }
 
     this.endViewTransform();
@@ -206,6 +217,7 @@ export class GalvanisGame {
     syncLabels(this.ui);
     this.makeWalls();
     this.updateBandWalls();
+    this.updatePulseLabel();
   }
 
   start(): void {
@@ -431,6 +443,8 @@ export class GalvanisGame {
     this.makeWalls();
     this.updateBandWalls();
     this.pieceCount = 0;
+    this.pulseCharges = PULSE_START_CHARGES;
+    this.updatePulseLabel();
     this.activePiece = null;
     this.gameOver = false;
     this.firstContactTime = null;
@@ -572,7 +586,56 @@ export class GalvanisGame {
     }
   }
 
+  /** High-voltage pulse: burns every body-disjoint path the high voltage can break down, at the cost of one charge. */
+  private firePulse(): void {
+    if (this.gameOver || this.isPaused || this.isResolvingTurn || this.flash.bolts || this.pulseCharges < 1) {
+      return;
+    }
+
+    const result = findAllLeftRightPaths(
+      this.engine.world,
+      this.viewport,
+      Number(this.ui.bandX.input.value),
+      Number(this.ui.highVoltage.input.value),
+      new Set<Matter.Body>(this.activePiece ? [this.activePiece] : []),
+    );
+
+    // A pulse with nothing to hit is not wasted.
+    if (!result) {
+      return;
+    }
+
+    this.pulseCharges -= 1;
+    this.updatePulseLabel();
+    this.startFlash(result.bolts, result.leftX, result.rightX, true);
+  }
+
+  private startFlash(bolts: Bolt[], leftX: number, rightX: number, high: boolean): void {
+    this.flash.bolts = bolts;
+    this.flash.high = high;
+    this.flash.startedAt = performance.now();
+    this.flash.until = this.flash.startedAt + FLASH_DURATION_MS;
+    this.flash.leftX = leftX;
+    this.flash.rightX = rightX;
+    this.flashTimer = window.setTimeout(() => {
+      // While paused, leave the flash for onTick to finish after resume.
+      if (!this.isPaused) {
+        this.finishFlash();
+      }
+    }, FLASH_DURATION_MS + FLASH_TIMEOUT_BUFFER_MS);
+  }
+
+  private updatePulseLabel(): void {
+    this.ui.pulseCount.textContent = this.pulseCharges.toFixed(1);
+    this.ui.pulseBar.style.width = `${(this.pulseCharges / PULSE_MAX_CHARGES) * 100}%`;
+  }
+
   private triggerScanAndFlash(): void {
+    // A pulse still in flight must apply its burn before a new scan starts.
+    if (this.flash.bolts) {
+      this.finishFlash();
+    }
+
     if (this.flashTimer !== null) {
       window.clearTimeout(this.flashTimer);
       this.flashTimer = null;
@@ -583,6 +646,7 @@ export class GalvanisGame {
       this.viewport,
       Number(this.ui.bandX.input.value),
       Number(this.ui.voltage.input.value),
+      new Set<Matter.Body>(this.activePiece ? [this.activePiece] : []),
     );
 
     if (!result) {
@@ -595,20 +659,7 @@ export class GalvanisGame {
       return;
     }
 
-    this.flash.points = result.route.flatMap((segment) => segment.points);
-    this.flash.startedAt = performance.now();
-    this.flash.until = this.flash.startedAt + FLASH_DURATION_MS;
-    this.flash.leftX = result.leftX;
-    this.flash.rightX = result.rightX;
-    this.flash.pathNodes = result.pathNodes;
-    this.flash.arcs = result.arcs;
-    this.flash.route = result.route;
-    this.flashTimer = window.setTimeout(() => {
-      // While paused, leave the flash for onTick to finish after resume.
-      if (!this.isPaused) {
-        this.finishFlash();
-      }
-    }, FLASH_DURATION_MS + FLASH_TIMEOUT_BUFFER_MS);
+    this.startFlash([{ pathNodes: result.pathNodes, arcs: result.arcs, route: result.route }], result.leftX, result.rightX, false);
   }
 
   private finishFlash(): void {
@@ -619,20 +670,21 @@ export class GalvanisGame {
 
     let erased = false;
 
-    if (this.flash.pathNodes && this.ui.eraseOnPath.input.checked) {
-      const parents = new Set(this.flash.pathNodes.map((node) => node.parent));
+    if (this.flash.bolts && this.ui.eraseOnPath.input.checked) {
+      const parents = new Set(this.flash.bolts.flatMap((bolt) => bolt.pathNodes.map((node) => node.parent)));
 
       for (const parent of parents) {
         Matter.World.remove(this.engine.world, parent);
       }
 
       erased = parents.size > 0;
+
+      // Each cleared line recharges the high-voltage pulse.
+      this.pulseCharges = Math.min(PULSE_MAX_CHARGES, this.pulseCharges + this.flash.bolts.length * PULSE_RECHARGE_PER_LINE);
+      this.updatePulseLabel();
     }
 
-    this.flash.pathNodes = null;
-    this.flash.arcs = [];
-    this.flash.route = [];
-    this.flash.points = null;
+    this.flash.bolts = null;
     this.flash.until = 0;
 
     if (erased || this.isResolvingTurn) {
@@ -686,7 +738,7 @@ export class GalvanisGame {
       this.flashTimer = null;
     }
 
-    this.flash = { points: null, until: 0, startedAt: 0, leftX: 0, rightX: 0, pathNodes: null, arcs: [], route: [] };
+    this.flash = { until: 0, startedAt: 0, leftX: 0, rightX: 0, bolts: null, high: false };
   }
 
   private updateStatusLabel(): void {
@@ -700,7 +752,8 @@ export class GalvanisGame {
           : "Running";
   }
 
-  private drawConductionPath(context: CanvasRenderingContext2D, nodes: PathNode[]): void {
+  private drawConductionPath(context: CanvasRenderingContext2D, bolt: Bolt): void {
+    const nodes = bolt.pathNodes;
     const now = performance.now();
     const elapsed = now - this.flash.startedAt;
     const growth = Math.min(1, elapsed / (FLASH_DURATION_MS * 0.35));
@@ -708,7 +761,7 @@ export class GalvanisGame {
     const pulse = 0.75 + 0.25 * Math.sin(elapsed / 40);
 
     // The bolt creeps along block surfaces; a light jitter keeps it crackling without leaving the outline.
-    const segments = this.flash.route.map((segment) => ({
+    const segments = bolt.route.map((segment) => ({
       air: segment.air,
       points: jitteredPolyline(segment.points, segment.air ? 0.8 : 0.3),
     }));
@@ -762,7 +815,7 @@ export class GalvanisGame {
       context.shadowBlur = 18;
       context.shadowColor = segment.air ? "#ff5cf0" : "#7ce9ff";
       context.strokeStyle = segment.air ? "#ff5cf0" : "#7ce9ff";
-      context.lineWidth = segment.air ? 12 : 10;
+      context.lineWidth = (segment.air ? 12 : 10) * (this.flash.high ? 1.5 : 1);
       this.strokePolyline(context, part, 0.7);
       context.shadowBlur = 0;
       context.strokeStyle = segment.air ? "#ffd6fb" : "#ffffff";
@@ -771,7 +824,7 @@ export class GalvanisGame {
     }
 
     if (growth >= 1) {
-      this.drawAirLabels(context, this.flash.arcs);
+      this.drawAirLabels(context, bolt.arcs);
     }
 
     context.restore();
