@@ -16,7 +16,7 @@ export function findLeftRightPath(
   bandHalfWidth: number,
   voltageKv: number,
   excluded: ReadonlySet<Matter.Body> = new Set(),
-): { pathNodes: PathNode[]; leftX: number; rightX: number; totalGap: number; arcs: AirArc[]; route: RouteSegment[] } | null {
+): (Bolt & { leftX: number; rightX: number; totalGap: number }) | null {
   const center = viewport.width / 2;
   const leftX = center - bandHalfWidth;
   const rightX = center + bandHalfWidth;
@@ -204,7 +204,7 @@ export function findAllLeftRightPaths(
       break;
     }
 
-    bolts.push({ pathNodes: result.pathNodes, arcs: result.arcs, route: result.route });
+    bolts.push(result);
     leftX = result.leftX;
     rightX = result.rightX;
 

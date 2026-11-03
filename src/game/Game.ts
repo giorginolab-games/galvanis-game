@@ -22,6 +22,8 @@ type BandWalls = {
   right: Matter.Body | null;
 };
 
+const emptyFlash = (): FlashState => ({ until: 0, startedAt: 0, leftX: 0, rightX: 0, bolts: null, high: false });
+
 export class GalvanisGame {
   private readonly ui: UiRefs;
   private readonly engine: Matter.Engine;
@@ -42,7 +44,7 @@ export class GalvanisGame {
   private isSettlingAfterFlash = false;
   private settledSince: number | null = null;
   private pulseCharges = PULSE_START_CHARGES;
-  private flash: FlashState = { until: 0, startedAt: 0, leftX: 0, rightX: 0, bolts: null, high: false };
+  private flash: FlashState = emptyFlash();
   private flashTimer: number | null = null;
   private resizeObserver: ResizeObserver | null = null;
 
@@ -443,8 +445,7 @@ export class GalvanisGame {
     this.makeWalls();
     this.updateBandWalls();
     this.pieceCount = 0;
-    this.pulseCharges = PULSE_START_CHARGES;
-    this.updatePulseLabel();
+    this.setPulseCharges(PULSE_START_CHARGES);
     this.activePiece = null;
     this.gameOver = false;
     this.firstContactTime = null;
@@ -597,7 +598,7 @@ export class GalvanisGame {
       this.viewport,
       Number(this.ui.bandX.input.value),
       Number(this.ui.highVoltage.input.value),
-      new Set<Matter.Body>(this.activePiece ? [this.activePiece] : []),
+      this.inFlightBodies(),
     );
 
     // A pulse with nothing to hit is not wasted.
@@ -605,8 +606,7 @@ export class GalvanisGame {
       return;
     }
 
-    this.pulseCharges -= 1;
-    this.updatePulseLabel();
+    this.setPulseCharges(this.pulseCharges - 1);
     this.startFlash(result.bolts, result.leftX, result.rightX, true);
   }
 
@@ -625,6 +625,16 @@ export class GalvanisGame {
     }, FLASH_DURATION_MS + FLASH_TIMEOUT_BUFFER_MS);
   }
 
+  /** The piece still under player control is not part of the circuit. */
+  private inFlightBodies(): ReadonlySet<Matter.Body> {
+    return new Set<Matter.Body>(this.activePiece ? [this.activePiece] : []);
+  }
+
+  private setPulseCharges(charges: number): void {
+    this.pulseCharges = Math.min(PULSE_MAX_CHARGES, charges);
+    this.updatePulseLabel();
+  }
+
   private updatePulseLabel(): void {
     this.ui.pulseCount.textContent = this.pulseCharges.toFixed(1);
     this.ui.pulseBar.style.width = `${(this.pulseCharges / PULSE_MAX_CHARGES) * 100}%`;
@@ -636,17 +646,12 @@ export class GalvanisGame {
       this.finishFlash();
     }
 
-    if (this.flashTimer !== null) {
-      window.clearTimeout(this.flashTimer);
-      this.flashTimer = null;
-    }
-
     const result = findLeftRightPath(
       this.engine.world,
       this.viewport,
       Number(this.ui.bandX.input.value),
       Number(this.ui.voltage.input.value),
-      new Set<Matter.Body>(this.activePiece ? [this.activePiece] : []),
+      this.inFlightBodies(),
     );
 
     if (!result) {
@@ -659,7 +664,7 @@ export class GalvanisGame {
       return;
     }
 
-    this.startFlash([{ pathNodes: result.pathNodes, arcs: result.arcs, route: result.route }], result.leftX, result.rightX, false);
+    this.startFlash([result], result.leftX, result.rightX, false);
   }
 
   private finishFlash(): void {
@@ -680,8 +685,7 @@ export class GalvanisGame {
       erased = parents.size > 0;
 
       // Each cleared line recharges the high-voltage pulse.
-      this.pulseCharges = Math.min(PULSE_MAX_CHARGES, this.pulseCharges + this.flash.bolts.length * PULSE_RECHARGE_PER_LINE);
-      this.updatePulseLabel();
+      this.setPulseCharges(this.pulseCharges + this.flash.bolts.length * PULSE_RECHARGE_PER_LINE);
     }
 
     this.flash.bolts = null;
@@ -738,7 +742,7 @@ export class GalvanisGame {
       this.flashTimer = null;
     }
 
-    this.flash = { until: 0, startedAt: 0, leftX: 0, rightX: 0, bolts: null, high: false };
+    this.flash = emptyFlash();
   }
 
   private updateStatusLabel(): void {
