@@ -1,7 +1,7 @@
 import * as Matter from "matter-js";
 import { AIR_BREAKDOWN_KV_PER_PX, AIR_GAP_WEIGHT, BAND_EPSILON, BAND_WALL_THICKNESS, CONTACT_EPSILON } from "./constants";
 import { getTetrominoParts, isTetrominoBody } from "./pieces";
-import type { AirArc, PathNode, StageSize } from "./types";
+import type { AirArc, PathNode, RouteSegment, StageSize } from "./types";
 
 /**
  * Finds the discharge path between the left and right band walls.
@@ -15,7 +15,7 @@ export function findLeftRightPath(
   viewport: StageSize,
   bandHalfWidth: number,
   voltageKv: number,
-): { pathNodes: PathNode[]; leftX: number; rightX: number; totalGap: number; arcs: AirArc[]; route: Point[] } | null {
+): { pathNodes: PathNode[]; leftX: number; rightX: number; totalGap: number; arcs: AirArc[]; route: RouteSegment[] } | null {
   const center = viewport.width / 2;
   const leftX = center - bandHalfWidth;
   const rightX = center + bandHalfWidth;
@@ -134,30 +134,31 @@ export function findLeftRightPath(
 
   // Discharges creep along the exposed surface of the conductors and only leap across the air gaps, so the drawn
   // route hugs each block's outline between where it enters and leaves, rather than cutting through the interior.
-  const route: Point[] = [{ x: leftFace, y: leftPoint.y }];
+  const route: RouteSegment[] = [];
+  const addAir = (from: Point, to: Point): void => {
+    if (Math.hypot(to.x - from.x, to.y - from.y) > CONTACT_EPSILON) {
+      route.push({ points: [from, to], air: true });
+    }
+  };
   let entry: Point = leftPoint;
+
+  addAir({ x: leftFace, y: leftPoint.y }, leftPoint);
 
   for (let i = 0; i < pathIds.length; i += 1) {
     const vertices = nodes[pathIds[i]].part.vertices;
-    let exit: Point;
-    let nextEntry: Point | null = null;
+    const isLast = i === pathIds.length - 1;
+    const pair = isLast ? null : closestPair(vertices, nodes[pathIds[i + 1]].part.vertices);
+    const exit = pair ? pair.from : rightPoint;
 
-    if (i === pathIds.length - 1) {
-      exit = rightPoint;
-    } else {
-      const pair = closestPair(vertices, nodes[pathIds[i + 1]].part.vertices);
-      exit = pair.from;
-      nextEntry = pair.to;
-    }
+    route.push({ points: surfacePath(vertices, entry, exit), air: false });
 
-    route.push(...surfacePath(vertices, entry, exit));
-
-    if (nextEntry) {
-      entry = nextEntry;
+    if (pair) {
+      addAir(pair.from, pair.to);
+      entry = pair.to;
     }
   }
 
-  route.push({ x: rightFace, y: rightPoint.y });
+  addAir(rightPoint, { x: rightFace, y: rightPoint.y });
 
   return {
     pathNodes: pathIds.map((id) => nodes[id]),
@@ -268,6 +269,16 @@ function surfacePath(vertices: Point[], from: Point, to: Point): Point[] {
 
 function extremeVertex(node: PathNode, direction: -1 | 1): Point {
   return node.part.vertices.reduce((best, vertex) => (vertex.x * direction > best.x * direction ? vertex : best));
+}
+
+export function polylineLength(points: Point[]): number {
+  let total = 0;
+
+  for (let i = 1; i < points.length; i += 1) {
+    total += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+  }
+
+  return total;
 }
 
 /** Returns the leading `fraction` (0..1) of a polyline by arc length. */

@@ -10,7 +10,7 @@ import {
   WALL_THICKNESS,
 } from "./constants";
 import { getUiRefs, syncLabels } from "./dom";
-import { findLeftRightPath, jitteredPolyline, truncatePolyline } from "./pathfinding";
+import { findLeftRightPath, jitteredPolyline, polylineLength, truncatePolyline } from "./pathfinding";
 import { freezeTetromino, isTetrominoBody, makeTetromino, sleepTetromino, wakeTetromino } from "./pieces";
 import type { AirArc, FlashState, PathNode, StageSize, TetrominoBody, TetrominoName, UiRefs } from "./types";
 
@@ -595,7 +595,7 @@ export class GalvanisGame {
       return;
     }
 
-    this.flash.points = result.route;
+    this.flash.points = result.route.flatMap((segment) => segment.points);
     this.flash.startedAt = performance.now();
     this.flash.until = this.flash.startedAt + FLASH_DURATION_MS;
     this.flash.leftX = result.leftX;
@@ -708,7 +708,12 @@ export class GalvanisGame {
     const pulse = 0.75 + 0.25 * Math.sin(elapsed / 40);
 
     // The bolt creeps along block surfaces; a light jitter keeps it crackling without leaving the outline.
-    const bolt = truncatePolyline(jitteredPolyline(this.flash.route, 0.3), growth);
+    const segments = this.flash.route.map((segment) => ({
+      air: segment.air,
+      points: jitteredPolyline(segment.points, segment.air ? 0.8 : 0.3),
+    }));
+    const lengths = segments.map((segment) => polylineLength(segment.points));
+    let visible = lengths.reduce((sum, length) => sum + length, 0) * growth;
 
     context.save();
     context.globalAlpha = fade;
@@ -744,39 +749,43 @@ export class GalvanisGame {
 
     context.globalAlpha = fade;
     context.lineCap = "round";
-    context.shadowBlur = 18;
-    context.shadowColor = "#7ce9ff";
-    context.strokeStyle = "#7ce9ff";
-    context.lineWidth = 10;
-    this.strokePolyline(context, bolt, 0.7);
-    context.shadowBlur = 0;
-    context.strokeStyle = "#ffffff";
-    context.lineWidth = 3.5;
-    this.strokePolyline(context, bolt, 1);
+
+    // Cyan-white along conductor surfaces, magenta where the discharge breaks down air.
+    for (const [index, segment] of segments.entries()) {
+      if (visible <= 0) {
+        break;
+      }
+
+      const part = truncatePolyline(segment.points, Math.min(1, visible / Math.max(lengths[index], 1e-6)));
+      visible -= lengths[index];
+
+      context.shadowBlur = 18;
+      context.shadowColor = segment.air ? "#ff5cf0" : "#7ce9ff";
+      context.strokeStyle = segment.air ? "#ff5cf0" : "#7ce9ff";
+      context.lineWidth = segment.air ? 12 : 10;
+      this.strokePolyline(context, part, 0.7);
+      context.shadowBlur = 0;
+      context.strokeStyle = segment.air ? "#ffd6fb" : "#ffffff";
+      context.lineWidth = segment.air ? 4 : 3.5;
+      this.strokePolyline(context, part, 1);
+    }
 
     if (growth >= 1) {
-      this.drawAirArcs(context, this.flash.arcs);
+      this.drawAirLabels(context, this.flash.arcs);
     }
+
     context.restore();
   }
 
-  /** Draws each air gap the discharge breaks down, in magenta, labelled with its width and the kV it takes. */
-  private drawAirArcs(context: CanvasRenderingContext2D, arcs: AirArc[]): void {
+  /** Labels each air gap the discharge breaks down with its width and the kV it takes. */
+  private drawAirLabels(context: CanvasRenderingContext2D, arcs: AirArc[]): void {
     context.save();
-    context.lineCap = "round";
+    context.shadowBlur = 0;
     context.font = "11px sans-serif";
     context.textAlign = "center";
+    context.fillStyle = "#ffd6fb";
 
     for (const arc of arcs) {
-      const spark = jitteredPolyline([arc.from, arc.to]);
-
-      context.shadowBlur = 16;
-      context.shadowColor = "#ff5cf0";
-      context.strokeStyle = "#ff8cf5";
-      context.lineWidth = 4;
-      this.strokePolyline(context, spark, 1);
-      context.shadowBlur = 0;
-      context.fillStyle = "#ffd6fb";
       context.fillText(
         `${arc.length.toFixed(1)} px · ${(arc.length * AIR_BREAKDOWN_KV_PER_PX).toFixed(0)} kV`,
         (arc.from.x + arc.to.x) / 2,

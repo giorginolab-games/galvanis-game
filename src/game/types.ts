@@ -39,6 +39,12 @@ export interface AirArc {
   length: number;
 }
 
+/** A piece of the discharge route: along a conductor surface, or an arc across an air gap. */
+export interface RouteSegment {
+  points: Array<{ x: number; y: number }>;
+  air: boolean;
+}
+
 export interface FlashState {
   points: Array<{ x: number; y: number }> | null;
   until: number;
@@ -47,7 +53,7 @@ export interface FlashState {
   rightX: number;
   pathNodes: PathNode[] | null;
   arcs: AirArc[];
-  route: Array<{ x: number; y: number }>;
+  route: RouteSegment[];
 }
 
 export interface RangeControl {
