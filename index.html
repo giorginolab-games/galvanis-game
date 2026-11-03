@@ -87,8 +87,8 @@
             <span id="bandXVal" class="stat">200</span>
           </div>
           <div class="row">
-            <label>Margin slack: <input id="marginSlack" type="range" min="0" max="80" step="2" value="10" /></label>
-            <span id="marginSlackVal" class="stat">10</span>
+            <label>Voltage (kV): <input id="voltage" type="range" min="0" max="300" step="3" value="45" /></label>
+            <span id="voltageVal" class="stat">45</span>
           </div>
           <div class="row">
             <label><input id="showBand" type="checkbox" checked /> Show band &amp; boundaries</label>
@@ -97,7 +97,7 @@
             <label><input id="eraseOnPath" type="checkbox" checked /> Erase on path found</label>
           </div>
           <div class="footer">
-            The scan erases entire conductive tetrominoes touched by the path, then lets the rest settle again.
+            The scan erases entire conductive tetrominoes touched by the path, then lets the rest settle again. Voltage can arc across air gaps (breakdown ~3 kV per px, 1 px = 1 mm): the path with the least total air wins, and its gaps must sum to at most kV / 3 px.
           </div>
         </section>
       </aside>

@@ -1,48 +1,59 @@
 import * as Matter from "matter-js";
-import { BAND_EPSILON, BAND_WALL_THICKNESS, VOID_PENALTY, CONTACT_EPSILON } from "./constants";
+import { AIR_BREAKDOWN_KV_PER_PX, AIR_GAP_WEIGHT, BAND_EPSILON, BAND_WALL_THICKNESS, CONTACT_EPSILON } from "./constants";
 import { getTetrominoParts, isTetrominoBody } from "./pieces";
 import type { PathNode, StageSize } from "./types";
 
+/**
+ * Finds the discharge path between the left and right band walls.
+ *
+ * Model: the applied voltage sits across the series of air gaps along the path (metal drops ~0 V), so the
+ * path can break down only if its total air gap is at most voltage / breakdown field (air: ~3 kV/mm). Among
+ * candidates the arc takes the path with the least total air, then the shortest metal run.
+ */
 export function findLeftRightPath(
   world: Matter.World,
   viewport: StageSize,
   bandHalfWidth: number,
-  marginSlack: number,
-): { pathNodes: PathNode[]; leftX: number; rightX: number } | null {
+  voltageKv: number,
+): { pathNodes: PathNode[]; leftX: number; rightX: number; totalGap: number } | null {
   const center = viewport.width / 2;
   const leftX = center - bandHalfWidth;
   const rightX = center + bandHalfWidth;
+  const maxGap = voltageKv / AIR_BREAKDOWN_KV_PER_PX;
+  // Electrodes are the band walls' inner faces.
+  const leftFace = leftX + BAND_WALL_THICKNESS / 2;
+  const rightFace = rightX - BAND_WALL_THICKNESS / 2;
   const nodes = gatherConductiveNodes(world, leftX, rightX);
-  // Pieces rest against solid band walls centered on leftX/rightX, so they can never get closer than half a wall.
-  const slack = Math.max(marginSlack, BAND_WALL_THICKNESS / 2 + BAND_EPSILON);
 
   if (nodes.length === 0) {
     return null;
   }
 
-  const graph = buildGraph(nodes);
-  const startIds = nodes.filter((node) => node.bounds.min.x <= leftX + slack).map((node) => node.id);
-  const goalIds = nodes.filter((node) => node.bounds.max.x >= rightX - slack).map((node) => node.id);
+  const graph = buildGraph(nodes, maxGap);
+  const extent = nodes.map((node) => {
+    const xs = node.part.vertices.map((vertex) => vertex.x);
+    return { min: Math.min(...xs), max: Math.max(...xs) };
+  });
+  const leftGap = (id: number): number => Math.max(0, extent[id].min - leftFace);
+  const rightGap = (id: number): number => Math.max(0, rightFace - extent[id].max);
 
-  if (startIds.length === 0 || goalIds.length === 0) {
-    return null;
-  }
-
-  // Dijkstra on conduction distance: edge cost is the center-to-center distance, entry/exit cost is the
-  // horizontal run from the band edge. This yields the geometrically shortest path, not just the fewest blocks.
-  const dist = new Array<number>(nodes.length).fill(Infinity);
+  const cost = new Array<number>(nodes.length).fill(Infinity);
+  const gapSum = new Array<number>(nodes.length).fill(0);
   const previous = new Array<number | null>(nodes.length).fill(null);
   const done = new Array<boolean>(nodes.length).fill(false);
 
-  for (const id of startIds) {
-    dist[id] = entryCost(nodes[id].bounds.min.x - leftX, nodes[id].cx - nodes[id].bounds.min.x);
+  for (const node of nodes) {
+    if (leftGap(node.id) <= maxGap) {
+      cost[node.id] = leftGap(node.id) * AIR_GAP_WEIGHT + Math.max(0, node.cx - extent[node.id].min);
+      gapSum[node.id] = leftGap(node.id);
+    }
   }
 
   for (;;) {
     let current = -1;
 
     for (let id = 0; id < nodes.length; id += 1) {
-      if (!done[id] && dist[id] < Infinity && (current === -1 || dist[id] < dist[current])) {
+      if (!done[id] && cost[id] < Infinity && (current === -1 || cost[id] < cost[current])) {
         current = id;
       }
     }
@@ -53,25 +64,36 @@ export function findLeftRightPath(
 
     done[current] = true;
 
-    for (const neighborId of graph[current]) {
-      const cost = dist[current] + Math.hypot(nodes[neighborId].cx - nodes[current].cx, nodes[neighborId].cy - nodes[current].cy);
+    for (const edge of graph[current]) {
+      const step = Math.hypot(nodes[edge.to].cx - nodes[current].cx, nodes[edge.to].cy - nodes[current].cy);
+      const next = cost[current] + edge.gap * AIR_GAP_WEIGHT + step;
 
-      if (cost < dist[neighborId]) {
-        dist[neighborId] = cost;
-        previous[neighborId] = current;
+      if (next < cost[edge.to] && gapSum[current] + edge.gap <= maxGap) {
+        cost[edge.to] = next;
+        gapSum[edge.to] = gapSum[current] + edge.gap;
+        previous[edge.to] = current;
       }
     }
   }
 
   let goal: number | null = null;
   let best = Infinity;
+  let totalGap = 0;
 
-  for (const id of goalIds) {
-    const total = dist[id] + entryCost(rightX - nodes[id].bounds.max.x, nodes[id].bounds.max.x - nodes[id].cx);
+  for (const node of nodes) {
+    const id = node.id;
+    const exitGap = rightGap(id);
+
+    if (cost[id] === Infinity || gapSum[id] + exitGap > maxGap) {
+      continue;
+    }
+
+    const total = cost[id] + exitGap * AIR_GAP_WEIGHT + Math.max(0, extent[id].max - node.cx);
 
     if (total < best) {
       best = total;
       goal = id;
+      totalGap = gapSum[id] + exitGap;
     }
   }
 
@@ -91,6 +113,7 @@ export function findLeftRightPath(
     pathNodes: pathIds.map((id) => nodes[id]),
     leftX,
     rightX,
+    totalGap,
   };
 }
 
@@ -127,11 +150,6 @@ export function jitteredPolyline(points: Array<{ x: number; y: number }>): Array
   }
 
   return output;
-}
-
-/** Cost of reaching a block from a band wall: the void gap is penalized, the run inside the block is not. */
-function entryCost(gap: number, inside: number): number {
-  return Math.max(0, gap) * VOID_PENALTY + inside;
 }
 
 /** Returns the leading `fraction` (0..1) of a polyline by arc length. */
@@ -197,8 +215,10 @@ function gatherConductiveNodes(world: Matter.World, leftX: number, rightX: numbe
   return nodes;
 }
 
-function buildGraph(nodes: PathNode[]): number[][] {
-  const graph = Array.from({ length: nodes.length }, () => [] as number[]);
+type Edge = { to: number; gap: number };
+
+function buildGraph(nodes: PathNode[], maxGap: number): Edge[][] {
+  const graph = Array.from({ length: nodes.length }, () => [] as Edge[]);
 
   for (let leftIndex = 0; leftIndex < nodes.length; leftIndex += 1) {
     const left = nodes[leftIndex];
@@ -206,36 +226,44 @@ function buildGraph(nodes: PathNode[]): number[][] {
     for (let rightIndex = leftIndex + 1; rightIndex < nodes.length; rightIndex += 1) {
       const right = nodes[rightIndex];
 
-      if (!boundsNear(left.bounds, right.bounds) || !areConnected(left, right)) {
+      if (!boundsNear(left.bounds, right.bounds, Math.max(CONTACT_EPSILON, maxGap))) {
         continue;
       }
 
-      graph[leftIndex].push(rightIndex);
-      graph[rightIndex].push(leftIndex);
+      const gap = airGap(left, right, maxGap);
+
+      if (gap === null) {
+        continue;
+      }
+
+      graph[leftIndex].push({ to: rightIndex, gap });
+      graph[rightIndex].push({ to: leftIndex, gap });
     }
   }
 
   return graph;
 }
 
-function boundsNear(a: Matter.Bounds, b: Matter.Bounds): boolean {
-  return !(
-    a.max.x < b.min.x - CONTACT_EPSILON ||
-    b.max.x < a.min.x - CONTACT_EPSILON ||
-    a.max.y < b.min.y - CONTACT_EPSILON ||
-    b.max.y < a.min.y - CONTACT_EPSILON
-  );
+function boundsNear(a: Matter.Bounds, b: Matter.Bounds, margin: number): boolean {
+  return !(a.max.x < b.min.x - margin || b.max.x < a.min.x - margin || a.max.y < b.min.y - margin || b.max.y < a.min.y - margin);
 }
 
-function areConnected(a: PathNode, b: PathNode): boolean {
+/** Air gap between two blocks (0 when conducting by contact), or null if they cannot be bridged. */
+function airGap(a: PathNode, b: PathNode, maxGap: number): number | null {
   if (a.parent === b.parent) {
     // Cells of one tetromino conduct only through shared edges, not diagonal corners.
     const size = Math.sqrt(a.part.area);
-    return Math.hypot(a.cx - b.cx, a.cy - b.cy) <= size * 1.1;
+    return Math.hypot(a.cx - b.cx, a.cy - b.cy) <= size * 1.1 ? 0 : null;
   }
 
-  // Different bodies conduct when their actual outlines touch, not merely their (rotated) bounding boxes.
-  return polygonDistance(a.part.vertices, b.part.vertices) <= CONTACT_EPSILON;
+  // Different bodies: real outline distance, not rotated bounding boxes.
+  const distance = polygonDistance(a.part.vertices, b.part.vertices);
+
+  if (distance <= CONTACT_EPSILON) {
+    return 0;
+  }
+
+  return distance <= maxGap ? distance : null;
 }
 
 type Point = { x: number; y: number };

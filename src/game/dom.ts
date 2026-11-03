@@ -41,7 +41,7 @@ export function getUiRefs(): UiRefs {
     lockDelay: rangeControl("lockDelay", "lockDelayVal"),
     insulatingChance: rangeControl("insulatingChance", "insulatingChanceVal"),
     bandX: rangeControl("bandX", "bandXVal"),
-    marginSlack: rangeControl("marginSlack", "marginSlackVal"),
+    voltage: rangeControl("voltage", "voltageVal"),
     sleeping: toggleControl("sleeping"),
     freezeBlocks: toggleControl("freezeBlocks"),
     showBand: toggleControl("showBand"),
@@ -57,5 +57,5 @@ export function syncLabels(ui: UiRefs): void {
   ui.lockDelay.value.textContent = ui.lockDelay.input.value;
   ui.insulatingChance.value.textContent = `${ui.insulatingChance.input.value}%`;
   ui.bandX.value.textContent = ui.bandX.input.value;
-  ui.marginSlack.value.textContent = ui.marginSlack.input.value;
+  ui.voltage.value.textContent = ui.voltage.input.value;
 }

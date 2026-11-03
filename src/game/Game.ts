@@ -1,5 +1,6 @@
 import * as Matter from "matter-js";
 import {
+  AIR_BREAKDOWN_KV_PER_PX,
   BAND_WALL_THICKNESS,
   FLASH_DURATION_MS,
   FLASH_TIMEOUT_BUFFER_MS,
@@ -151,20 +152,21 @@ export class GalvanisGame {
       context.lineTo(rightX, this.viewport.height);
       context.stroke();
 
-      const slack = Number(this.ui.marginSlack.input.value);
+      // Longest air gap the applied voltage can break down.
+      const reach = Number(this.ui.voltage.input.value) / AIR_BREAKDOWN_KV_PER_PX;
 
-      if (slack > 0) {
+      if (reach > 0) {
         context.globalAlpha = 0.5;
         context.strokeStyle = "#9fe870";
         context.lineWidth = 1.5;
         context.setLineDash([4, 4]);
         context.beginPath();
-        context.moveTo(leftX + slack, 0);
-        context.lineTo(leftX + slack, this.viewport.height);
+        context.moveTo(leftX + BAND_WALL_THICKNESS / 2 + reach, 0);
+        context.lineTo(leftX + BAND_WALL_THICKNESS / 2 + reach, this.viewport.height);
         context.stroke();
         context.beginPath();
-        context.moveTo(rightX - slack, 0);
-        context.lineTo(rightX - slack, this.viewport.height);
+        context.moveTo(rightX - BAND_WALL_THICKNESS / 2 - reach, 0);
+        context.lineTo(rightX - BAND_WALL_THICKNESS / 2 - reach, this.viewport.height);
         context.stroke();
       }
 
@@ -247,7 +249,7 @@ export class GalvanisGame {
       this.ui.lockDelay.input,
       this.ui.insulatingChance.input,
       this.ui.bandX.input,
-      this.ui.marginSlack.input,
+      this.ui.voltage.input,
     ]) {
       control.addEventListener("input", () => {
         syncLabels(this.ui);
@@ -580,7 +582,7 @@ export class GalvanisGame {
       this.engine.world,
       this.viewport,
       Number(this.ui.bandX.input.value),
-      Number(this.ui.marginSlack.input.value),
+      Number(this.ui.voltage.input.value),
     );
 
     if (!result) {

@@ -68,7 +68,7 @@ export interface UiRefs {
   lockDelay: RangeControl;
   insulatingChance: RangeControl;
   bandX: RangeControl;
-  marginSlack: RangeControl;
+  voltage: RangeControl;
   sleeping: ToggleControl;
   freezeBlocks: ToggleControl;
   showBand: ToggleControl;

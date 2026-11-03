@@ -6,8 +6,10 @@ export const WALL_THICKNESS = 60;
 export const BAND_WALL_THICKNESS = 12;
 export const BAND_EPSILON = 2;
 export const CONTACT_EPSILON = 1;
-// Cost multiplier for the empty gap between a band wall and the first/last block, so paths prefer blocks touching the wall.
-export const VOID_PENALTY = 10;
+// Dielectric breakdown of air: ~3 kV/mm. The board is scaled at 1 px = 1 mm, so one pixel of air costs 3 kV.
+export const AIR_BREAKDOWN_KV_PER_PX = 3;
+// The discharge picks the path with the least total air first, then the shortest metal run; this weights air over length.
+export const AIR_GAP_WEIGHT = 10000;
 
 export const SHAPES = {
   I: [
