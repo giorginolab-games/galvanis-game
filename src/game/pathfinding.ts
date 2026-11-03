@@ -29,13 +29,23 @@ export function findLeftRightPath(
     return null;
   }
 
-  const graph = buildGraph(nodes, maxGap);
+  const insulators = gatherInsulatorOutlines(world);
+  const graph = buildGraph(nodes, maxGap, insulators);
   const extent = nodes.map((node) => {
     const xs = node.part.vertices.map((vertex) => vertex.x);
     return { min: Math.min(...xs), max: Math.max(...xs) };
   });
   const leftGap = (id: number): number => Math.max(0, extent[id].min - leftFace);
   const rightGap = (id: number): number => Math.max(0, rightFace - extent[id].max);
+  // An arc needs clear air: a solid insulator in the way stops it, so electrode gaps are checked too.
+  const leftReachable = (id: number): boolean => {
+    const point = extremeVertex(nodes[id], -1);
+    return leftGap(id) <= CONTACT_EPSILON || !isBlocked({ x: leftFace, y: point.y }, point, insulators);
+  };
+  const rightReachable = (id: number): boolean => {
+    const point = extremeVertex(nodes[id], 1);
+    return rightGap(id) <= CONTACT_EPSILON || !isBlocked(point, { x: rightFace, y: point.y }, insulators);
+  };
 
   const cost = new Array<number>(nodes.length).fill(Infinity);
   const gapSum = new Array<number>(nodes.length).fill(0);
@@ -43,7 +53,7 @@ export function findLeftRightPath(
   const done = new Array<boolean>(nodes.length).fill(false);
 
   for (const node of nodes) {
-    if (leftGap(node.id) <= maxGap) {
+    if (leftGap(node.id) <= maxGap && leftReachable(node.id)) {
       cost[node.id] = leftGap(node.id) * AIR_GAP_WEIGHT + Math.max(0, node.cx - extent[node.id].min);
       gapSum[node.id] = leftGap(node.id);
     }
@@ -84,7 +94,7 @@ export function findLeftRightPath(
     const id = node.id;
     const exitGap = rightGap(id);
 
-    if (cost[id] === Infinity || gapSum[id] + exitGap > maxGap) {
+    if (cost[id] === Infinity || gapSum[id] + exitGap > maxGap || !rightReachable(id)) {
       continue;
     }
 
@@ -315,6 +325,44 @@ export function truncatePolyline(points: Point[], fraction: number): Point[] {
   return output;
 }
 
+function gatherInsulatorOutlines(world: Matter.World): Point[][] {
+  const outlines: Point[][] = [];
+
+  for (const body of Matter.Composite.allBodies(world)) {
+    if (isTetrominoBody(body) && body.plugin.isInsulating) {
+      for (const part of getTetrominoParts(body)) {
+        outlines.push(part.vertices);
+      }
+    }
+  }
+
+  return outlines;
+}
+
+/** True if the straight arc from `from` to `to` passes through any insulator (ends are trimmed so touching doesn't count). */
+function isBlocked(from: Point, to: Point, insulators: Point[][]): boolean {
+  const trim = 0.5;
+  const length = Math.hypot(to.x - from.x, to.y - from.y);
+
+  if (length <= 2 * trim) {
+    return false;
+  }
+
+  const ux = (to.x - from.x) / length;
+  const uy = (to.y - from.y) / length;
+  const start = { x: from.x + ux * trim, y: from.y + uy * trim };
+  const end = { x: to.x - ux * trim, y: to.y - uy * trim };
+  const middle = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+
+  return insulators.some(
+    (outline) =>
+      pointInPolygon(start, outline) ||
+      pointInPolygon(end, outline) ||
+      pointInPolygon(middle, outline) ||
+      outline.some((vertex, index) => segmentsIntersect(start, end, vertex, outline[(index + 1) % outline.length])),
+  );
+}
+
 function gatherConductiveNodes(world: Matter.World, leftX: number, rightX: number): PathNode[] {
   const nodes: PathNode[] = [];
 
@@ -346,7 +394,7 @@ function gatherConductiveNodes(world: Matter.World, leftX: number, rightX: numbe
 
 type Edge = { to: number; gap: number };
 
-function buildGraph(nodes: PathNode[], maxGap: number): Edge[][] {
+function buildGraph(nodes: PathNode[], maxGap: number, insulators: Point[][]): Edge[][] {
   const graph = Array.from({ length: nodes.length }, () => [] as Edge[]);
 
   for (let leftIndex = 0; leftIndex < nodes.length; leftIndex += 1) {
@@ -359,7 +407,7 @@ function buildGraph(nodes: PathNode[], maxGap: number): Edge[][] {
         continue;
       }
 
-      const gap = airGap(left, right, maxGap);
+      const gap = airGap(left, right, maxGap, insulators);
 
       if (gap === null) {
         continue;
@@ -378,7 +426,7 @@ function boundsNear(a: Matter.Bounds, b: Matter.Bounds, margin: number): boolean
 }
 
 /** Air gap between two blocks (0 when conducting by contact), or null if they cannot be bridged. */
-function airGap(a: PathNode, b: PathNode, maxGap: number): number | null {
+function airGap(a: PathNode, b: PathNode, maxGap: number, insulators: Point[][]): number | null {
   if (a.parent === b.parent) {
     // Cells of one tetromino conduct only through shared edges, not diagonal corners.
     const size = Math.sqrt(a.part.area);
@@ -386,13 +434,13 @@ function airGap(a: PathNode, b: PathNode, maxGap: number): number | null {
   }
 
   // Different bodies: real outline distance, not rotated bounding boxes.
-  const distance = polygonDistance(a.part.vertices, b.part.vertices);
+  const pair = closestPair(a.part.vertices, b.part.vertices);
 
-  if (distance <= CONTACT_EPSILON) {
+  if (pair.distance <= CONTACT_EPSILON) {
     return 0;
   }
 
-  return distance <= maxGap ? distance : null;
+  return pair.distance <= maxGap && !isBlocked(pair.from, pair.to, insulators) ? pair.distance : null;
 }
 
 type Point = { x: number; y: number };
