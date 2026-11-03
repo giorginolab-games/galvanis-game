@@ -72,3 +72,11 @@ export const PIECE_COLORS = {
 } as const;
 
 export const TETROMINO_NAMES = Object.keys(SHAPES) as Array<keyof typeof SHAPES>;
+
+// Progression.
+export const LINES_PER_LEVEL = 5;
+export const MAX_LEVEL = 15;
+// Scoring.
+export const POINTS_PER_CELL = 25;
+export const POINTS_PER_AIR_PX = 4;
+export const POINTS_PER_LOCK = 5;
