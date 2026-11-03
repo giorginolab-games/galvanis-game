@@ -36,6 +36,9 @@ export interface PathNode {
 export interface FlashState {
   points: Array<{ x: number; y: number }> | null;
   until: number;
+  startedAt: number;
+  leftX: number;
+  rightX: number;
   pathNodes: PathNode[] | null;
 }
 

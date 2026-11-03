@@ -9,9 +9,9 @@ import {
   WALL_THICKNESS,
 } from "./constants";
 import { getUiRefs, syncLabels } from "./dom";
-import { findLeftRightPath, jitteredPolyline } from "./pathfinding";
+import { findLeftRightPath, jitteredPolyline, truncatePolyline } from "./pathfinding";
 import { freezeTetromino, isTetrominoBody, makeTetromino, sleepTetromino, wakeTetromino } from "./pieces";
-import type { FlashState, StageSize, TetrominoBody, TetrominoName, UiRefs } from "./types";
+import type { FlashState, PathNode, StageSize, TetrominoBody, TetrominoName, UiRefs } from "./types";
 
 type BandWalls = {
   left: Matter.Body | null;
@@ -37,7 +37,7 @@ export class GalvanisGame {
   private isResolvingTurn = false;
   private isSettlingAfterFlash = false;
   private settledSince: number | null = null;
-  private flash: FlashState = { points: null, until: 0, pathNodes: null };
+  private flash: FlashState = { points: null, until: 0, startedAt: 0, leftX: 0, rightX: 0, pathNodes: null };
   private flashTimer: number | null = null;
   private resizeObserver: ResizeObserver | null = null;
 
@@ -172,22 +172,8 @@ export class GalvanisGame {
       context.restore();
     }
 
-    if (this.flash.points && performance.now() < this.flash.until) {
-      context.save();
-      context.shadowBlur = 18;
-      context.shadowColor = "#7ce9ff";
-      context.lineJoin = "round";
-      context.lineCap = "round";
-      context.strokeStyle = "#7ce9ff";
-      context.globalAlpha = 0.7;
-      context.lineWidth = 10;
-      this.strokeFlashPolyline(context, this.flash.points);
-      context.shadowBlur = 0;
-      context.strokeStyle = "#fff6a0";
-      context.globalAlpha = 1;
-      context.lineWidth = 3.5;
-      this.strokeFlashPolyline(context, this.flash.points);
-      context.restore();
+    if (this.flash.pathNodes && performance.now() < this.flash.until) {
+      this.drawConductionPath(context, this.flash.pathNodes);
     }
 
     this.endViewTransform();
@@ -609,7 +595,10 @@ export class GalvanisGame {
 
     const points = result.pathNodes.map((node) => ({ x: node.cx, y: node.cy }));
     this.flash.points = jitteredPolyline(points);
-    this.flash.until = performance.now() + FLASH_DURATION_MS;
+    this.flash.startedAt = performance.now();
+    this.flash.until = this.flash.startedAt + FLASH_DURATION_MS;
+    this.flash.leftX = result.leftX;
+    this.flash.rightX = result.rightX;
     this.flash.pathNodes = result.pathNodes;
     this.flashTimer = window.setTimeout(() => {
       // While paused, leave the flash for onTick to finish after resume.
@@ -692,11 +681,7 @@ export class GalvanisGame {
       this.flashTimer = null;
     }
 
-    this.flash = {
-      points: null,
-      until: 0,
-      pathNodes: null,
-    };
+    this.flash = { points: null, until: 0, startedAt: 0, leftX: 0, rightX: 0, pathNodes: null };
   }
 
   private updateStatusLabel(): void {
@@ -710,10 +695,70 @@ export class GalvanisGame {
           : "Running";
   }
 
-  private strokeFlashPolyline(
-    context: CanvasRenderingContext2D,
-    points: Array<{ x: number; y: number }>,
-  ): void {
+  private drawConductionPath(context: CanvasRenderingContext2D, nodes: PathNode[]): void {
+    const now = performance.now();
+    const elapsed = now - this.flash.startedAt;
+    const growth = Math.min(1, elapsed / (FLASH_DURATION_MS * 0.35));
+    const fade = Math.min(1, (this.flash.until - now) / (FLASH_DURATION_MS * 0.25));
+    const pulse = 0.75 + 0.25 * Math.sin(elapsed / 40);
+
+    // Follow the live block positions, anchored to the band edges, so the bolt tracks pieces that are still moving.
+    const base = [
+      { x: this.flash.leftX, y: nodes[0].part.position.y },
+      ...nodes.map((node) => ({ x: node.part.position.x, y: node.part.position.y })),
+      { x: this.flash.rightX, y: nodes[nodes.length - 1].part.position.y },
+    ];
+    const bolt = truncatePolyline(jitteredPolyline(base), growth);
+
+    context.save();
+    context.globalAlpha = fade;
+
+    // Outline the blocks that make up the shortest path as the bolt reaches them.
+    context.lineJoin = "round";
+    context.shadowBlur = 14;
+    context.shadowColor = "#fff6a0";
+    context.strokeStyle = "#fff6a0";
+    context.fillStyle = "rgba(255, 246, 160, 0.28)";
+    context.lineWidth = 3;
+
+    for (const [index, node] of nodes.entries()) {
+      if ((index + 1) / (nodes.length + 1) > growth) {
+        break;
+      }
+
+      context.globalAlpha = fade * pulse;
+      context.beginPath();
+
+      for (const [vertexIndex, vertex] of node.part.vertices.entries()) {
+        if (vertexIndex === 0) {
+          context.moveTo(vertex.x, vertex.y);
+        } else {
+          context.lineTo(vertex.x, vertex.y);
+        }
+      }
+
+      context.closePath();
+      context.fill();
+      context.stroke();
+    }
+
+    context.globalAlpha = fade;
+    context.lineCap = "round";
+    context.shadowBlur = 18;
+    context.shadowColor = "#7ce9ff";
+    context.strokeStyle = "#7ce9ff";
+    context.lineWidth = 10;
+    this.strokePolyline(context, bolt, 0.7);
+    context.shadowBlur = 0;
+    context.strokeStyle = "#ffffff";
+    context.lineWidth = 3.5;
+    this.strokePolyline(context, bolt, 1);
+    context.restore();
+  }
+
+  private strokePolyline(context: CanvasRenderingContext2D, points: Array<{ x: number; y: number }>, alpha: number): void {
+    context.save();
+    context.globalAlpha *= alpha;
     context.beginPath();
 
     for (const [index, point] of points.entries()) {
@@ -725,6 +770,7 @@ export class GalvanisGame {
     }
 
     context.stroke();
+    context.restore();
   }
 
   private startViewTransform(): void {
