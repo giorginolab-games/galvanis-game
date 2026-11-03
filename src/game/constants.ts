@@ -5,7 +5,7 @@ export const FLASH_TIMEOUT_BUFFER_MS = 20;
 export const WALL_THICKNESS = 60;
 export const BAND_WALL_THICKNESS = 12;
 export const BAND_EPSILON = 2;
-export const CONTACT_EPSILON = 3;
+export const CONTACT_EPSILON = 1;
 
 export const SHAPES = {
   I: [
