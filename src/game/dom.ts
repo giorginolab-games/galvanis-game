@@ -34,6 +34,8 @@ export function getUiRefs(): UiRefs {
     pauseBtn: requiredElement<HTMLButtonElement>("pauseBtn"),
     spawnBtn: requiredElement<HTMLButtonElement>("spawnBtn"),
     scanBtn: requiredElement<HTMLButtonElement>("scanBtn"),
+    pulseCount: requiredElement("pulseCount"),
+    pulseBar: requiredElement("pulseBar"),
     gravityY: rangeControl("gravityY", "gravityYVal"),
     friction: rangeControl("friction", "frictionVal"),
     rest: rangeControl("rest", "restVal"),
@@ -42,6 +44,7 @@ export function getUiRefs(): UiRefs {
     insulatingChance: rangeControl("insulatingChance", "insulatingChanceVal"),
     bandX: rangeControl("bandX", "bandXVal"),
     voltage: rangeControl("voltage", "voltageVal"),
+    highVoltage: rangeControl("highVoltage", "highVoltageVal"),
     sleeping: toggleControl("sleeping"),
     freezeBlocks: toggleControl("freezeBlocks"),
     showBand: toggleControl("showBand"),
@@ -58,4 +61,5 @@ export function syncLabels(ui: UiRefs): void {
   ui.insulatingChance.value.textContent = `${ui.insulatingChance.input.value}%`;
   ui.bandX.value.textContent = ui.bandX.input.value;
   ui.voltage.value.textContent = ui.voltage.input.value;
+  ui.highVoltage.value.textContent = ui.highVoltage.input.value;
 }

@@ -261,3 +261,23 @@ hr {
     letter-spacing: 0.08em;
   }
 }
+
+.pulse-bar {
+  display: inline-block;
+  width: 90px;
+  height: 8px;
+  margin-left: 8px;
+  vertical-align: middle;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.pulse-bar-fill {
+  display: block;
+  height: 100%;
+  width: 33%;
+  background: #e07cff;
+  box-shadow: 0 0 8px #e07cff;
+  transition: width 0.2s;
+}

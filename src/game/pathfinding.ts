@@ -15,6 +15,7 @@ export function findLeftRightPath(
   viewport: StageSize,
   bandHalfWidth: number,
   voltageKv: number,
+  excluded: ReadonlySet<Matter.Body> = new Set(),
 ): { pathNodes: PathNode[]; leftX: number; rightX: number; totalGap: number } | null {
   const center = viewport.width / 2;
   const leftX = center - bandHalfWidth;
@@ -23,7 +24,7 @@ export function findLeftRightPath(
   // Electrodes are the band walls' inner faces.
   const leftFace = leftX + BAND_WALL_THICKNESS / 2;
   const rightFace = rightX - BAND_WALL_THICKNESS / 2;
-  const nodes = gatherConductiveNodes(world, leftX, rightX);
+  const nodes = gatherConductiveNodes(world, leftX, rightX, excluded);
 
   if (nodes.length === 0) {
     return null;
@@ -117,6 +118,41 @@ export function findLeftRightPath(
   };
 }
 
+/**
+ * Finds every body-disjoint left-right path the voltage can break down (a high-voltage pulse clears several
+ * "rows" at once). Paths are found greedily, cheapest first; each path's tetrominoes are then taken out of play.
+ */
+export function findAllLeftRightPaths(
+  world: Matter.World,
+  viewport: StageSize,
+  bandHalfWidth: number,
+  voltageKv: number,
+  excluded: ReadonlySet<Matter.Body> = new Set(),
+): { paths: PathNode[][]; leftX: number; rightX: number } | null {
+  const skip = new Set<Matter.Body>(excluded);
+  const paths: PathNode[][] = [];
+  let leftX = 0;
+  let rightX = 0;
+
+  for (;;) {
+    const result = findLeftRightPath(world, viewport, bandHalfWidth, voltageKv, skip);
+
+    if (!result) {
+      break;
+    }
+
+    paths.push(result.pathNodes);
+    leftX = result.leftX;
+    rightX = result.rightX;
+
+    for (const node of result.pathNodes) {
+      skip.add(node.parent);
+    }
+  }
+
+  return paths.length > 0 ? { paths, leftX, rightX } : null;
+}
+
 export function jitteredPolyline(points: Array<{ x: number; y: number }>): Array<{ x: number; y: number }> {
   if (points.length < 2) {
     return points;
@@ -186,11 +222,11 @@ export function truncatePolyline(points: Point[], fraction: number): Point[] {
   return output;
 }
 
-function gatherConductiveNodes(world: Matter.World, leftX: number, rightX: number): PathNode[] {
+function gatherConductiveNodes(world: Matter.World, leftX: number, rightX: number, excluded: ReadonlySet<Matter.Body>): PathNode[] {
   const nodes: PathNode[] = [];
 
   for (const body of Matter.Composite.allBodies(world)) {
-    if (!isTetrominoBody(body) || body.plugin.isInsulating) {
+    if (!isTetrominoBody(body) || body.plugin.isInsulating || excluded.has(body)) {
       continue;
     }
 

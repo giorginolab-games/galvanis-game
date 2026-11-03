@@ -34,12 +34,12 @@ export interface PathNode {
 }
 
 export interface FlashState {
-  points: Array<{ x: number; y: number }> | null;
   until: number;
   startedAt: number;
   leftX: number;
   rightX: number;
-  pathNodes: PathNode[] | null;
+  paths: PathNode[][] | null;
+  high: boolean;
 }
 
 export interface RangeControl {
@@ -61,6 +61,8 @@ export interface UiRefs {
   pauseBtn: HTMLButtonElement;
   spawnBtn: HTMLButtonElement;
   scanBtn: HTMLButtonElement;
+  pulseCount: HTMLElement;
+  pulseBar: HTMLElement;
   gravityY: RangeControl;
   friction: RangeControl;
   rest: RangeControl;
@@ -69,6 +71,7 @@ export interface UiRefs {
   insulatingChance: RangeControl;
   bandX: RangeControl;
   voltage: RangeControl;
+  highVoltage: RangeControl;
   sleeping: ToggleControl;
   freezeBlocks: ToggleControl;
   showBand: ToggleControl;
