@@ -47,6 +47,7 @@ export interface FlashState {
   rightX: number;
   pathNodes: PathNode[] | null;
   arcs: AirArc[];
+  route: Array<{ x: number; y: number }>;
 }
 
 export interface RangeControl {

@@ -15,7 +15,7 @@ export function findLeftRightPath(
   viewport: StageSize,
   bandHalfWidth: number,
   voltageKv: number,
-): { pathNodes: PathNode[]; leftX: number; rightX: number; totalGap: number; arcs: AirArc[] } | null {
+): { pathNodes: PathNode[]; leftX: number; rightX: number; totalGap: number; arcs: AirArc[]; route: Point[] } | null {
   const center = viewport.width / 2;
   const leftX = center - bandHalfWidth;
   const rightX = center + bandHalfWidth;
@@ -132,16 +132,44 @@ export function findLeftRightPath(
     arcs.push({ from: rightPoint, to: { x: rightFace, y: rightPoint.y }, length: rightGap(last.id) });
   }
 
+  // Discharges creep along the exposed surface of the conductors and only leap across the air gaps, so the drawn
+  // route hugs each block's outline between where it enters and leaves, rather than cutting through the interior.
+  const route: Point[] = [{ x: leftFace, y: leftPoint.y }];
+  let entry: Point = leftPoint;
+
+  for (let i = 0; i < pathIds.length; i += 1) {
+    const vertices = nodes[pathIds[i]].part.vertices;
+    let exit: Point;
+    let nextEntry: Point | null = null;
+
+    if (i === pathIds.length - 1) {
+      exit = rightPoint;
+    } else {
+      const pair = closestPair(vertices, nodes[pathIds[i + 1]].part.vertices);
+      exit = pair.from;
+      nextEntry = pair.to;
+    }
+
+    route.push(...surfacePath(vertices, entry, exit));
+
+    if (nextEntry) {
+      entry = nextEntry;
+    }
+  }
+
+  route.push({ x: rightFace, y: rightPoint.y });
+
   return {
     pathNodes: pathIds.map((id) => nodes[id]),
     leftX,
     rightX,
     totalGap,
     arcs,
+    route,
   };
 }
 
-export function jitteredPolyline(points: Array<{ x: number; y: number }>): Array<{ x: number; y: number }> {
+export function jitteredPolyline(points: Array<{ x: number; y: number }>, amplitudeScale = 1): Array<{ x: number; y: number }> {
   if (points.length < 2) {
     return points;
   }
@@ -162,7 +190,7 @@ export function jitteredPolyline(points: Array<{ x: number; y: number }>): Array
       const t = cut / (cuts + 1);
       const pointX = start.x + dx * t;
       const pointY = start.y + dy * t;
-      const amplitude = 6 + Math.random() * 8;
+      const amplitude = (6 + Math.random() * 8) * amplitudeScale;
 
       output.push({
         x: pointX + normalX * (Math.random() * 2 - 1) * amplitude,
@@ -174,6 +202,68 @@ export function jitteredPolyline(points: Array<{ x: number; y: number }>): Array
   }
 
   return output;
+}
+
+/**
+ * Walks a convex polygon's outline from `from` to `to`, taking the way around that is more exposed
+ * (higher on screen, i.e. facing the open air above the stack), and the shorter one when they tie.
+ */
+function surfacePath(vertices: Point[], from: Point, to: Point): Point[] {
+  const lengths = [0];
+
+  for (let i = 0; i < vertices.length; i += 1) {
+    const next = vertices[(i + 1) % vertices.length];
+    lengths.push(lengths[i] + Math.hypot(next.x - vertices[i].x, next.y - vertices[i].y));
+  }
+
+  const perimeter = lengths[vertices.length];
+  const locate = (point: Point): { s: number; point: Point } => {
+    let best = { s: 0, point: vertices[0], distance: Infinity };
+
+    for (let i = 0; i < vertices.length; i += 1) {
+      const start = vertices[i];
+      const onEdge = closestOnSegment(point, start, vertices[(i + 1) % vertices.length]);
+      const distance = Math.hypot(point.x - onEdge.x, point.y - onEdge.y);
+
+      if (distance < best.distance) {
+        best = { s: lengths[i] + Math.hypot(onEdge.x - start.x, onEdge.y - start.y), point: onEdge, distance };
+      }
+    }
+
+    return best;
+  };
+
+  const a = locate(from);
+  const b = locate(to);
+  const forward = (b.s - a.s + perimeter) % perimeter;
+
+  const walk = (direction: 1 | -1): Point[] => {
+    const length = direction === 1 ? forward : perimeter - forward;
+    const between: Array<{ point: Point; along: number }> = [];
+
+    for (let i = 0; i < vertices.length; i += 1) {
+      const along = direction === 1 ? (lengths[i] - a.s + perimeter) % perimeter : (a.s - lengths[i] + perimeter) % perimeter;
+
+      if (along > 1e-6 && along < length - 1e-6) {
+        between.push({ point: vertices[i], along });
+      }
+    }
+
+    between.sort((p, q) => p.along - q.along);
+
+    return [a.point, ...between.map((entry) => entry.point), b.point].map(({ x, y }) => ({ x, y }));
+  };
+
+  const meanY = (points: Point[]): number => points.reduce((sum, point) => sum + point.y, 0) / points.length;
+  const ahead = walk(1);
+  const behind = walk(-1);
+  const difference = meanY(ahead) - meanY(behind);
+
+  if (Math.abs(difference) < 1) {
+    return forward <= perimeter - forward ? ahead : behind;
+  }
+
+  return difference < 0 ? ahead : behind;
 }
 
 function extremeVertex(node: PathNode, direction: -1 | 1): Point {

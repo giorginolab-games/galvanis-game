@@ -38,7 +38,7 @@ export class GalvanisGame {
   private isResolvingTurn = false;
   private isSettlingAfterFlash = false;
   private settledSince: number | null = null;
-  private flash: FlashState = { points: null, until: 0, startedAt: 0, leftX: 0, rightX: 0, pathNodes: null, arcs: [] };
+  private flash: FlashState = { points: null, until: 0, startedAt: 0, leftX: 0, rightX: 0, pathNodes: null, arcs: [], route: [] };
   private flashTimer: number | null = null;
   private resizeObserver: ResizeObserver | null = null;
 
@@ -595,14 +595,14 @@ export class GalvanisGame {
       return;
     }
 
-    const points = result.pathNodes.map((node) => ({ x: node.cx, y: node.cy }));
-    this.flash.points = jitteredPolyline(points);
+    this.flash.points = result.route;
     this.flash.startedAt = performance.now();
     this.flash.until = this.flash.startedAt + FLASH_DURATION_MS;
     this.flash.leftX = result.leftX;
     this.flash.rightX = result.rightX;
     this.flash.pathNodes = result.pathNodes;
     this.flash.arcs = result.arcs;
+    this.flash.route = result.route;
     this.flashTimer = window.setTimeout(() => {
       // While paused, leave the flash for onTick to finish after resume.
       if (!this.isPaused) {
@@ -631,6 +631,7 @@ export class GalvanisGame {
 
     this.flash.pathNodes = null;
     this.flash.arcs = [];
+    this.flash.route = [];
     this.flash.points = null;
     this.flash.until = 0;
 
@@ -685,7 +686,7 @@ export class GalvanisGame {
       this.flashTimer = null;
     }
 
-    this.flash = { points: null, until: 0, startedAt: 0, leftX: 0, rightX: 0, pathNodes: null, arcs: [] };
+    this.flash = { points: null, until: 0, startedAt: 0, leftX: 0, rightX: 0, pathNodes: null, arcs: [], route: [] };
   }
 
   private updateStatusLabel(): void {
@@ -706,13 +707,8 @@ export class GalvanisGame {
     const fade = Math.min(1, (this.flash.until - now) / (FLASH_DURATION_MS * 0.25));
     const pulse = 0.75 + 0.25 * Math.sin(elapsed / 40);
 
-    // Follow the live block positions, anchored to the band edges, so the bolt tracks pieces that are still moving.
-    const base = [
-      { x: this.flash.leftX, y: nodes[0].part.position.y },
-      ...nodes.map((node) => ({ x: node.part.position.x, y: node.part.position.y })),
-      { x: this.flash.rightX, y: nodes[nodes.length - 1].part.position.y },
-    ];
-    const bolt = truncatePolyline(jitteredPolyline(base), growth);
+    // The bolt creeps along block surfaces; a light jitter keeps it crackling without leaving the outline.
+    const bolt = truncatePolyline(jitteredPolyline(this.flash.route, 0.3), growth);
 
     context.save();
     context.globalAlpha = fade;
