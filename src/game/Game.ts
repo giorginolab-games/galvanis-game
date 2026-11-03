@@ -108,7 +108,15 @@ export class GalvanisGame {
         this.activePiece.parts.includes(pair.bodyA) ||
         this.activePiece.parts.includes(pair.bodyB);
 
-      if (touchingActivePiece) {
+      if (!touchingActivePiece) {
+        continue;
+      }
+
+      // Only the floor and other tetrominoes count as landing; side/band/ceiling walls must not start the lock timer.
+      const other = this.activePiece.parts.includes(pair.bodyA) ? pair.bodyB : pair.bodyA;
+      const isLanding = other === this.walls[0] || (other.parent !== other && isTetrominoBody(other.parent)) || isTetrominoBody(other);
+
+      if (isLanding) {
         this.firstContactTime ??= performance.now();
       }
     }
@@ -262,7 +270,11 @@ export class GalvanisGame {
 
     this.ui.resetBtn.addEventListener("click", () => this.reset());
     this.ui.pauseBtn.addEventListener("click", () => this.togglePause());
-    this.ui.spawnBtn.addEventListener("click", () => this.spawnRandom());
+    this.ui.spawnBtn.addEventListener("click", () => {
+      if (!this.activePiece && !this.isResolvingTurn && !this.isPaused) {
+        this.spawnRandom();
+      }
+    });
     this.ui.scanBtn.addEventListener("click", () => this.triggerScanAndFlash());
   }
 
@@ -409,7 +421,7 @@ export class GalvanisGame {
 
   private reset(): void {
     for (const body of Matter.Composite.allBodies(this.engine.world)) {
-      if (!body.isStatic) {
+      if (!body.isStatic || isTetrominoBody(body)) {
         Matter.World.remove(this.engine.world, body);
       }
     }
@@ -595,20 +607,27 @@ export class GalvanisGame {
       this.flashTimer = null;
     }
 
+    let erased = false;
+
     if (this.flash.pathNodes && this.ui.eraseOnPath.input.checked) {
       const parents = new Set(this.flash.pathNodes.map((node) => node.parent));
 
       for (const parent of parents) {
         Matter.World.remove(this.engine.world, parent);
       }
+
+      erased = parents.size > 0;
     }
 
     this.flash.pathNodes = null;
     this.flash.points = null;
     this.flash.until = 0;
 
-    if (this.isResolvingTurn) {
+    if (erased || this.isResolvingTurn) {
       this.wakeTetrominoesAfterFlash();
+    }
+
+    if (this.isResolvingTurn) {
       this.isSettlingAfterFlash = true;
       this.settledSince = null;
       this.updateStatusLabel();
@@ -629,10 +648,6 @@ export class GalvanisGame {
     for (const body of Matter.Composite.allBodies(this.engine.world)) {
       if (!isTetrominoBody(body) || body.plugin.frozen || body.isStatic) {
         continue;
-      }
-
-      if (!body.isSleeping && (body.speed > 0.12 || Math.abs(body.angularSpeed) > 0.04)) {
-        return false;
       }
 
       if (!body.isSleeping && (body.speed > 0.02 || Math.abs(body.angularSpeed) > 0.02)) {
