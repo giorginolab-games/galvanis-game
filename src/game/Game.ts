@@ -25,6 +25,7 @@ export class GalvanisGame {
   private readonly render: Matter.Render;
   private readonly keyState = new Set<string>();
   private readonly viewport: StageSize = { width: 1, height: 1 };
+  private readonly uiAbort = new AbortController();
 
   private walls: Matter.Body[] = [];
   private bandWalls: BandWalls = { left: null, right: null };
@@ -52,6 +53,10 @@ export class GalvanisGame {
     }
   };
 
+  private readonly onBlur = (): void => {
+    this.keyState.clear();
+  };
+
   private readonly onKeyUp = (event: KeyboardEvent): void => {
     this.keyState.delete(event.code);
   };
@@ -63,7 +68,7 @@ export class GalvanisGame {
 
     const now = performance.now();
 
-    if (this.isResolvingTurn && this.flash.points && now >= this.flash.until) {
+    if (this.flash.points && now >= this.flash.until) {
       this.finishFlash();
     }
 
@@ -230,6 +235,11 @@ export class GalvanisGame {
 
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("keyup", this.onKeyUp);
+    window.removeEventListener("blur", this.onBlur);
+    this.uiAbort.abort();
+    Matter.Events.off(this.engine, "collisionStart", this.onCollisionStart);
+    Matter.Events.off(this.runner, "tick", this.onTick);
+    Matter.Events.off(this.render, "afterRender", this.onAfterRender);
     window.removeEventListener("resize", this.handleResize);
     this.resizeObserver?.disconnect();
     Matter.Render.stop(this.render);
@@ -237,10 +247,12 @@ export class GalvanisGame {
   }
 
   private bindUi(): void {
+    const { signal } = this.uiAbort;
+
     this.ui.gravityY.input.addEventListener("input", () => {
       this.engine.gravity.y = Number(this.ui.gravityY.input.value);
       syncLabels(this.ui);
-    });
+    }, { signal });
 
     for (const control of [
       this.ui.friction.input,
@@ -257,7 +269,7 @@ export class GalvanisGame {
         if (control === this.ui.bandX.input) {
           this.updateBandWalls();
         }
-      });
+      }, { signal });
     }
 
     this.ui.sleeping.input.addEventListener("change", () => {
@@ -266,16 +278,16 @@ export class GalvanisGame {
       if (this.activePiece) {
         Matter.Sleeping.set(this.activePiece, false);
       }
-    });
+    }, { signal });
 
-    this.ui.resetBtn.addEventListener("click", () => this.reset());
-    this.ui.pauseBtn.addEventListener("click", () => this.togglePause());
+    this.ui.resetBtn.addEventListener("click", () => this.reset(), { signal });
+    this.ui.pauseBtn.addEventListener("click", () => this.togglePause(), { signal });
     this.ui.spawnBtn.addEventListener("click", () => {
       if (!this.activePiece && !this.isResolvingTurn && !this.isPaused) {
         this.spawnRandom();
       }
-    });
-    this.ui.scanBtn.addEventListener("click", () => this.triggerScanAndFlash());
+    }, { signal });
+    this.ui.scanBtn.addEventListener("click", () => this.triggerScanAndFlash(), { signal });
   }
 
   private bindRuntimeEvents(): void {
@@ -284,6 +296,7 @@ export class GalvanisGame {
     Matter.Events.on(this.render, "afterRender", this.onAfterRender);
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("keyup", this.onKeyUp);
+    window.addEventListener("blur", this.onBlur);
   }
 
   private readonly handleResize = (): void => {
@@ -598,7 +611,12 @@ export class GalvanisGame {
     this.flash.points = jitteredPolyline(points);
     this.flash.until = performance.now() + FLASH_DURATION_MS;
     this.flash.pathNodes = result.pathNodes;
-    this.flashTimer = window.setTimeout(() => this.finishFlash(), FLASH_DURATION_MS + FLASH_TIMEOUT_BUFFER_MS);
+    this.flashTimer = window.setTimeout(() => {
+      // While paused, leave the flash for onTick to finish after resume.
+      if (!this.isPaused) {
+        this.finishFlash();
+      }
+    }, FLASH_DURATION_MS + FLASH_TIMEOUT_BUFFER_MS);
   }
 
   private finishFlash(): void {

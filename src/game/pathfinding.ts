@@ -1,5 +1,5 @@
 import * as Matter from "matter-js";
-import { BAND_EPSILON, CONTACT_EPSILON } from "./constants";
+import { BAND_EPSILON, BAND_WALL_THICKNESS, CONTACT_EPSILON } from "./constants";
 import { getTetrominoParts, isTetrominoBody } from "./pieces";
 import type { PathNode, StageSize } from "./types";
 
@@ -13,14 +13,16 @@ export function findLeftRightPath(
   const leftX = center - bandHalfWidth;
   const rightX = center + bandHalfWidth;
   const nodes = gatherConductiveNodes(world, leftX, rightX);
+  // Pieces rest against solid band walls centered on leftX/rightX, so they can never get closer than half a wall.
+  const slack = Math.max(marginSlack, BAND_WALL_THICKNESS / 2 + BAND_EPSILON);
 
   if (nodes.length === 0) {
     return null;
   }
 
   const graph = buildGraph(nodes);
-  const startIds = nodes.filter((node) => node.bounds.min.x <= leftX + marginSlack).map((node) => node.id);
-  const goalIds = new Set(nodes.filter((node) => node.bounds.max.x >= rightX - marginSlack).map((node) => node.id));
+  const startIds = nodes.filter((node) => node.bounds.min.x <= leftX + slack).map((node) => node.id);
+  const goalIds = new Set(nodes.filter((node) => node.bounds.max.x >= rightX - slack).map((node) => node.id));
 
   if (startIds.length === 0 || goalIds.size === 0) {
     return null;
