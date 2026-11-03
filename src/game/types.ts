@@ -33,6 +33,12 @@ export interface PathNode {
   bounds: Matter.Bounds;
 }
 
+export interface AirArc {
+  from: { x: number; y: number };
+  to: { x: number; y: number };
+  length: number;
+}
+
 export interface FlashState {
   points: Array<{ x: number; y: number }> | null;
   until: number;
@@ -40,6 +46,7 @@ export interface FlashState {
   leftX: number;
   rightX: number;
   pathNodes: PathNode[] | null;
+  arcs: AirArc[];
 }
 
 export interface RangeControl {

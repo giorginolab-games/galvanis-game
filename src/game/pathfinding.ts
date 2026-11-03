@@ -1,7 +1,7 @@
 import * as Matter from "matter-js";
 import { AIR_BREAKDOWN_KV_PER_PX, AIR_GAP_WEIGHT, BAND_EPSILON, BAND_WALL_THICKNESS, CONTACT_EPSILON } from "./constants";
 import { getTetrominoParts, isTetrominoBody } from "./pieces";
-import type { PathNode, StageSize } from "./types";
+import type { AirArc, PathNode, StageSize } from "./types";
 
 /**
  * Finds the discharge path between the left and right band walls.
@@ -15,7 +15,7 @@ export function findLeftRightPath(
   viewport: StageSize,
   bandHalfWidth: number,
   voltageKv: number,
-): { pathNodes: PathNode[]; leftX: number; rightX: number; totalGap: number } | null {
+): { pathNodes: PathNode[]; leftX: number; rightX: number; totalGap: number; arcs: AirArc[] } | null {
   const center = viewport.width / 2;
   const leftX = center - bandHalfWidth;
   const rightX = center + bandHalfWidth;
@@ -109,11 +109,35 @@ export function findLeftRightPath(
 
   pathIds.reverse();
 
+  // Collect the air gaps the discharge actually crosses, for display.
+  const arcs: AirArc[] = [];
+  const first = nodes[pathIds[0]];
+  const last = nodes[goal];
+  const leftPoint = extremeVertex(first, -1);
+  const rightPoint = extremeVertex(last, 1);
+
+  if (leftGap(first.id) > CONTACT_EPSILON) {
+    arcs.push({ from: { x: leftFace, y: leftPoint.y }, to: leftPoint, length: leftGap(first.id) });
+  }
+
+  for (let i = 1; i < pathIds.length; i += 1) {
+    const pair = closestPair(nodes[pathIds[i - 1]].part.vertices, nodes[pathIds[i]].part.vertices);
+
+    if (pair.distance > CONTACT_EPSILON) {
+      arcs.push({ from: pair.from, to: pair.to, length: pair.distance });
+    }
+  }
+
+  if (rightGap(last.id) > CONTACT_EPSILON) {
+    arcs.push({ from: rightPoint, to: { x: rightFace, y: rightPoint.y }, length: rightGap(last.id) });
+  }
+
   return {
     pathNodes: pathIds.map((id) => nodes[id]),
     leftX,
     rightX,
     totalGap,
+    arcs,
   };
 }
 
@@ -150,6 +174,10 @@ export function jitteredPolyline(points: Array<{ x: number; y: number }>): Array
   }
 
   return output;
+}
+
+function extremeVertex(node: PathNode, direction: -1 | 1): Point {
+  return node.part.vertices.reduce((best, vertex) => (vertex.x * direction > best.x * direction ? vertex : best));
 }
 
 /** Returns the leading `fraction` (0..1) of a polyline by arc length. */
@@ -268,8 +296,15 @@ function airGap(a: PathNode, b: PathNode, maxGap: number): number | null {
 
 type Point = { x: number; y: number };
 
+type ClosestPair = { distance: number; from: Point; to: Point };
+
 function polygonDistance(a: Point[], b: Point[]): number {
-  let min = Infinity;
+  return closestPair(a, b).distance;
+}
+
+/** Closest pair of boundary points between two convex polygons (distance 0 if they overlap). */
+function closestPair(a: Point[], b: Point[]): ClosestPair {
+  let best: ClosestPair = { distance: Infinity, from: a[0], to: b[0] };
 
   for (let i = 0; i < a.length; i += 1) {
     const a1 = a[i];
@@ -280,28 +315,39 @@ function polygonDistance(a: Point[], b: Point[]): number {
       const b2 = b[(j + 1) % b.length];
 
       if (segmentsIntersect(a1, a2, b1, b2)) {
-        return 0;
+        return { distance: 0, from: a1, to: a1 };
       }
 
-      min = Math.min(min, pointSegmentDistance(a1, b1, b2), pointSegmentDistance(b1, a1, a2));
+      const onB = closestOnSegment(a1, b1, b2);
+      const onA = closestOnSegment(b1, a1, a2);
+      const dB = Math.hypot(a1.x - onB.x, a1.y - onB.y);
+      const dA = Math.hypot(b1.x - onA.x, b1.y - onA.y);
+
+      if (dB < best.distance) {
+        best = { distance: dB, from: a1, to: onB };
+      }
+
+      if (dA < best.distance) {
+        best = { distance: dA, from: onA, to: b1 };
+      }
     }
   }
 
   // One polygon fully inside the other (heavy overlap).
   if (pointInPolygon(a[0], b) || pointInPolygon(b[0], a)) {
-    return 0;
+    return { distance: 0, from: a[0], to: a[0] };
   }
 
-  return min;
+  return best;
 }
 
-function pointSegmentDistance(p: Point, a: Point, b: Point): number {
+function closestOnSegment(p: Point, a: Point, b: Point): Point {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const lengthSq = dx * dx + dy * dy;
   const t = lengthSq === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lengthSq));
 
-  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+  return { x: a.x + t * dx, y: a.y + t * dy };
 }
 
 function segmentsIntersect(p1: Point, p2: Point, p3: Point, p4: Point): boolean {

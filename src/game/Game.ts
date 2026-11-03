@@ -12,7 +12,7 @@ import {
 import { getUiRefs, syncLabels } from "./dom";
 import { findLeftRightPath, jitteredPolyline, truncatePolyline } from "./pathfinding";
 import { freezeTetromino, isTetrominoBody, makeTetromino, sleepTetromino, wakeTetromino } from "./pieces";
-import type { FlashState, PathNode, StageSize, TetrominoBody, TetrominoName, UiRefs } from "./types";
+import type { AirArc, FlashState, PathNode, StageSize, TetrominoBody, TetrominoName, UiRefs } from "./types";
 
 type BandWalls = {
   left: Matter.Body | null;
@@ -38,7 +38,7 @@ export class GalvanisGame {
   private isResolvingTurn = false;
   private isSettlingAfterFlash = false;
   private settledSince: number | null = null;
-  private flash: FlashState = { points: null, until: 0, startedAt: 0, leftX: 0, rightX: 0, pathNodes: null };
+  private flash: FlashState = { points: null, until: 0, startedAt: 0, leftX: 0, rightX: 0, pathNodes: null, arcs: [] };
   private flashTimer: number | null = null;
   private resizeObserver: ResizeObserver | null = null;
 
@@ -602,6 +602,7 @@ export class GalvanisGame {
     this.flash.leftX = result.leftX;
     this.flash.rightX = result.rightX;
     this.flash.pathNodes = result.pathNodes;
+    this.flash.arcs = result.arcs;
     this.flashTimer = window.setTimeout(() => {
       // While paused, leave the flash for onTick to finish after resume.
       if (!this.isPaused) {
@@ -629,6 +630,7 @@ export class GalvanisGame {
     }
 
     this.flash.pathNodes = null;
+    this.flash.arcs = [];
     this.flash.points = null;
     this.flash.until = 0;
 
@@ -683,7 +685,7 @@ export class GalvanisGame {
       this.flashTimer = null;
     }
 
-    this.flash = { points: null, until: 0, startedAt: 0, leftX: 0, rightX: 0, pathNodes: null };
+    this.flash = { points: null, until: 0, startedAt: 0, leftX: 0, rightX: 0, pathNodes: null, arcs: [] };
   }
 
   private updateStatusLabel(): void {
@@ -755,6 +757,37 @@ export class GalvanisGame {
     context.strokeStyle = "#ffffff";
     context.lineWidth = 3.5;
     this.strokePolyline(context, bolt, 1);
+
+    if (growth >= 1) {
+      this.drawAirArcs(context, this.flash.arcs);
+    }
+    context.restore();
+  }
+
+  /** Draws each air gap the discharge breaks down, in magenta, labelled with its width and the kV it takes. */
+  private drawAirArcs(context: CanvasRenderingContext2D, arcs: AirArc[]): void {
+    context.save();
+    context.lineCap = "round";
+    context.font = "11px sans-serif";
+    context.textAlign = "center";
+
+    for (const arc of arcs) {
+      const spark = jitteredPolyline([arc.from, arc.to]);
+
+      context.shadowBlur = 16;
+      context.shadowColor = "#ff5cf0";
+      context.strokeStyle = "#ff8cf5";
+      context.lineWidth = 4;
+      this.strokePolyline(context, spark, 1);
+      context.shadowBlur = 0;
+      context.fillStyle = "#ffd6fb";
+      context.fillText(
+        `${arc.length.toFixed(1)} px · ${(arc.length * AIR_BREAKDOWN_KV_PER_PX).toFixed(0)} kV`,
+        (arc.from.x + arc.to.x) / 2,
+        Math.min(arc.from.y, arc.to.y) - 8,
+      );
+    }
+
     context.restore();
   }
 
