@@ -2,8 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>galvanis</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content="Galvanis — a physics falling-block game where you burn blocks away by bridging two electrodes with a conductive path." />
+    <meta name="theme-color" content="#0f1220" />
+    <title>Galvanis</title>
   </head>
   <body>
     <div class="wrap">
@@ -12,104 +14,205 @@
           <div class="stage-brand-name">GALVANIS</div>
           <div class="stage-brand-tag">conductive falling blocks</div>
         </div>
-        <div id="gameOverOverlay" class="game-over-overlay" hidden>
-          <div class="game-over-kicker">system overload</div>
-          <div class="game-over-title">GAME OVER</div>
-          <div class="game-over-subtitle">Reset to prime the grid and drop back in.</div>
+
+        <div class="mini-hud" aria-hidden="true">
+          <span><b id="miniScore">0</b></span>
+          <span>LV <b id="miniLevel">1</b></span>
+          <span>⚡ <b id="miniPulse">1.0</b></span>
+        </div>
+
+        <div id="hint" class="hint" role="status" aria-live="polite" hidden></div>
+
+        <div id="pauseOverlay" class="overlay" hidden>
+          <div class="overlay-card">
+            <div class="overlay-kicker">circuit open</div>
+            <div class="overlay-title">PAUSED</div>
+            <div class="overlay-actions">
+              <button class="btn btn-primary" id="resumeBtn" type="button">Resume</button>
+              <button class="btn" id="pauseHelpBtn" type="button">How to play</button>
+              <button class="btn" id="quitBtn" type="button">Quit to title</button>
+            </div>
+            <div class="overlay-hint"><span class="kbd">P</span> or <span class="kbd">Esc</span> to resume</div>
+          </div>
+        </div>
+
+        <div id="gameOverOverlay" class="overlay overlay-danger" hidden>
+          <div class="overlay-card">
+            <div class="overlay-kicker overlay-kicker-danger">system overload</div>
+            <div class="overlay-title">GAME OVER</div>
+            <div id="newBest" class="new-best" hidden>★ New best ★</div>
+            <dl class="final-stats">
+              <div><dt>Score</dt><dd id="finalScore">0</dd></div>
+              <div><dt>Level</dt><dd id="finalLevel">1</dd></div>
+              <div><dt>Lines</dt><dd id="finalLines">0</dd></div>
+              <div><dt>Best chain</dt><dd id="finalChain">0</dd></div>
+            </dl>
+            <div class="overlay-actions">
+              <button class="btn btn-primary" id="restartBtn" type="button">Play again</button>
+              <button class="btn" id="overTitleBtn" type="button">Title</button>
+            </div>
+            <div class="overlay-hint"><span class="kbd">Enter</span> to play again</div>
+          </div>
         </div>
       </div>
 
+      <div id="touchControls" class="touch-controls" aria-label="Touch controls">
+        <button class="touch-btn" data-key="ArrowLeft" type="button" aria-label="Move left">◀</button>
+        <button class="touch-btn" data-key="ArrowUp" type="button" aria-label="Rotate">⟳</button>
+        <button class="touch-btn" data-key="ArrowDown" type="button" aria-label="Soft drop">▼</button>
+        <button class="touch-btn" data-key="Space" type="button" aria-label="Hard drop">⤓</button>
+        <button class="touch-btn touch-btn-pulse" data-key="Enter" type="button" aria-label="High-voltage pulse">⚡</button>
+        <button class="touch-btn" data-key="ArrowRight" type="button" aria-label="Move right">▶</button>
+      </div>
+
       <aside class="sidebar">
-        <section id="hud" class="panel">
-          <div class="row"><strong>Controls</strong></div>
-          <div class="row">
-            <span class="kbd">←</span>/<span class="kbd">→</span> move
-            <span class="kbd">↑</span> rotate
-            <span class="kbd">↓</span> soft drop
-            <span class="kbd">Space</span> hard drop
-            <span class="kbd">Enter</span> high-V pulse
+        <section class="panel hud">
+          <div class="hud-score">
+            <div class="hud-label">Score</div>
+            <div id="score" class="hud-score-value">0</div>
+            <div class="hud-sub">Best <span id="best">0</span></div>
           </div>
-          <div class="row">
-            <button class="btn" id="resetBtn" type="button">Reset</button>
-            <button class="btn" id="pauseBtn" type="button">Pause</button>
-            <button class="btn" id="spawnBtn" type="button">Spawn</button>
-            <button class="btn" id="scanBtn" type="button">Scan &amp; Flash</button>
+
+          <div class="hud-grid">
+            <div class="hud-cell">
+              <div class="hud-label">Level</div>
+              <div id="level" class="hud-value">1</div>
+            </div>
+            <div class="hud-cell">
+              <div class="hud-label">Lines</div>
+              <div id="lines" class="hud-value">0</div>
+            </div>
+            <div class="hud-cell hud-next">
+              <div class="hud-label">Next</div>
+              <canvas id="nextCanvas" width="120" height="64" aria-label="Next piece"></canvas>
+            </div>
           </div>
-          <div class="row stat">
-            Pieces: <span id="pieceCount">0</span> | Active: <span id="activeName">-</span>
+
+          <div class="hud-progress" title="Lines until next level">
+            <div id="levelBar" class="hud-progress-fill"></div>
           </div>
-          <div class="row stat">
-            Pulses: <span id="pulseCount">1.0</span> / 3
-            <span class="pulse-bar"><span id="pulseBar" class="pulse-bar-fill"></span></span>
-          </div>
-          <div class="row stat">State: <span id="gameState">Running</span></div>
-          <div class="footer">
-            Play runs at low voltage: a conductive path bridging the band edges burns away when a piece lands. Press Enter for a high-voltage pulse that can arc across bigger gaps and burn several paths at once. Pulses are limited; each cleared line recharges half a pulse.
+
+          <div class="hud-pulse">
+            <div class="hud-pulse-head">
+              <span class="hud-label">High-V pulse <span class="kbd kbd-small">Enter</span></span>
+              <span id="pulseReady" class="pulse-ready" hidden>READY</span>
+            </div>
+            <div id="pulsePips" class="pulse-pips">
+              <span class="pip"><span class="pip-fill"></span></span>
+              <span class="pip"><span class="pip-fill"></span></span>
+              <span class="pip"><span class="pip-fill"></span></span>
+            </div>
           </div>
         </section>
 
-        <section class="panel">
-          <h2 class="title">Settings</h2>
-          <div class="row">
-            <label>Gravity Y: <input id="gravityY" type="range" min="0" max="2" step="0.05" value="1" /></label>
-            <span id="gravityYVal" class="stat">1.00</span>
+        <section class="panel controls-panel">
+          <ul class="controls-list">
+            <li><span><span class="kbd">←</span><span class="kbd">→</span></span> move</li>
+            <li><span class="kbd">↑</span> rotate</li>
+            <li><span class="kbd">↓</span> soft drop</li>
+            <li><span class="kbd">Space</span> hard drop</li>
+            <li><span class="kbd">Enter</span> pulse</li>
+            <li><span class="kbd">P</span> pause</li>
+          </ul>
+          <div class="controls-buttons">
+            <button class="btn btn-small" id="pauseBtn" type="button">Pause</button>
+            <button class="btn btn-small" id="helpBtn" type="button">Help</button>
+            <button class="btn btn-small btn-toggle" id="sfxBtn" type="button" aria-pressed="true">SFX</button>
+            <button class="btn btn-small btn-toggle" id="musicBtn" type="button" aria-pressed="true">Music</button>
           </div>
-          <div class="row">
-            <label>Friction: <input id="friction" type="range" min="0" max="0.2" step="0.005" value="0.08" /></label>
-            <span id="frictionVal" class="stat">0.080</span>
-          </div>
-          <div class="row">
-            <label>Restitution: <input id="rest" type="range" min="0" max="0.4" step="0.01" value="0.05" /></label>
-            <span id="restVal" class="stat">0.05</span>
-          </div>
-          <div class="row">
-            <label>Block Size: <input id="blockSize" type="range" min="16" max="48" step="2" value="30" /></label>
-            <span id="blockSizeVal" class="stat">30</span>
-          </div>
-          <div class="row">
-            <label>Lock Delay (ms): <input id="lockDelay" type="range" min="100" max="2000" step="50" value="500" /></label>
-            <span id="lockDelayVal" class="stat">500</span>
-          </div>
-          <div class="row">
-            <label><input id="sleeping" type="checkbox" checked /> Sleep settled bodies</label>
-          </div>
-          <div class="row">
-            <label><input id="freezeBlocks" type="checkbox" /> Freeze fallen blocks</label>
-          </div>
-          <div class="row">
-            <label>
-              Insulating piece chance:
-              <input id="insulatingChance" type="range" min="0" max="100" step="5" value="25" />
-            </label>
-            <span id="insulatingChanceVal" class="stat">25%</span>
-          </div>
+        </section>
 
-          <hr />
-
-          <h3 class="title title-small">Path Debug</h3>
+        <section id="debugPanel" class="panel debug-panel" hidden>
+          <h2 class="title">Debug <span class="title-note">toggle with <span class="kbd kbd-small">`</span></span></h2>
           <div class="row">
-            <label>Band half-width X: <input id="bandX" type="range" min="120" max="360" step="10" value="200" /></label>
-            <span id="bandXVal" class="stat">200</span>
+            <button class="btn btn-small" id="spawnBtn" type="button">Spawn</button>
+            <button class="btn btn-small" id="scanBtn" type="button">Scan &amp; Flash</button>
+          </div>
+          <div class="row stat" id="debugStats">–</div>
+          <div class="row">
+            <label><input id="autoDifficulty" type="checkbox" checked /> Auto difficulty (level curve)</label>
           </div>
           <div class="row">
-            <label>Low voltage (kV): <input id="voltage" type="range" min="0" max="300" step="3" value="45" /></label>
-            <span id="voltageVal" class="stat">45</span>
+            <label>Gravity Y <input id="gravityY" type="range" min="0" max="2" step="0.05" /></label>
+            <span id="gravityYVal" class="stat"></span>
           </div>
           <div class="row">
-            <label>High voltage (kV): <input id="highVoltage" type="range" min="0" max="600" step="3" value="150" /></label>
-            <span id="highVoltageVal" class="stat">150</span>
+            <label>Friction <input id="friction" type="range" min="0" max="0.2" step="0.005" /></label>
+            <span id="frictionVal" class="stat"></span>
           </div>
           <div class="row">
-            <label><input id="showBand" type="checkbox" checked /> Show band &amp; boundaries</label>
+            <label>Restitution <input id="rest" type="range" min="0" max="0.4" step="0.01" /></label>
+            <span id="restVal" class="stat"></span>
           </div>
           <div class="row">
-            <label><input id="eraseOnPath" type="checkbox" checked /> Erase on path found</label>
+            <label>Block size <input id="blockSize" type="range" min="16" max="48" step="2" /></label>
+            <span id="blockSizeVal" class="stat"></span>
           </div>
+          <div class="row">
+            <label>Lock delay (ms) <input id="lockDelay" type="range" min="100" max="2000" step="10" /></label>
+            <span id="lockDelayVal" class="stat"></span>
+          </div>
+          <div class="row">
+            <label>Insulator chance <input id="insulatingChance" type="range" min="0" max="100" step="1" /></label>
+            <span id="insulatingChanceVal" class="stat"></span>
+          </div>
+          <div class="row">
+            <label>Band half-width <input id="bandX" type="range" min="120" max="360" step="10" /></label>
+            <span id="bandXVal" class="stat"></span>
+          </div>
+          <div class="row">
+            <label>Low voltage (kV) <input id="voltage" type="range" min="0" max="300" step="1" /></label>
+            <span id="voltageVal" class="stat"></span>
+          </div>
+          <div class="row">
+            <label>High voltage (kV) <input id="highVoltage" type="range" min="0" max="600" step="3" /></label>
+            <span id="highVoltageVal" class="stat"></span>
+          </div>
+          <div class="row"><label><input id="sleeping" type="checkbox" /> Sleep settled bodies</label></div>
+          <div class="row"><label><input id="freezeBlocks" type="checkbox" /> Freeze fallen blocks</label></div>
+          <div class="row"><label><input id="showBand" type="checkbox" /> Path overlays (band, reach, gap labels)</label></div>
+          <div class="row"><label><input id="eraseOnPath" type="checkbox" /> Erase on path found</label></div>
           <div class="footer">
-            The scan erases entire conductive tetrominoes touched by the path, then lets the rest settle again. Voltage can arc across air gaps (breakdown ~3 kV per px, 1 px = 1 mm): the path with the least total air wins, and its gaps must sum to at most kV / 3 px.
+            Breakdown ~3 kV per px (1 px = 1 mm). The path with the least total air wins; its gaps must sum to at most kV / 3 px.
           </div>
         </section>
       </aside>
+    </div>
+
+    <div id="titleScreen" class="screen title-screen">
+      <div class="title-inner">
+        <svg class="title-bolt" viewBox="0 0 64 96" aria-hidden="true">
+          <path d="M38 2 L8 54 H30 L22 94 L56 36 H34 Z" />
+        </svg>
+        <h1 class="title-logo">GALVANIS</h1>
+        <p class="title-tag">Stack the blocks. Close the circuit. Burn it down.</p>
+        <div class="title-actions">
+          <button class="btn btn-primary btn-big" id="playBtn" type="button">Play</button>
+          <button class="btn btn-big" id="howBtn" type="button">How to play</button>
+        </div>
+        <div class="title-toggles">
+          <button class="btn btn-small btn-toggle" id="titleSfxBtn" type="button" aria-pressed="true">SFX</button>
+          <button class="btn btn-small btn-toggle" id="titleMusicBtn" type="button" aria-pressed="true">Music</button>
+        </div>
+        <div class="title-best">Best score <span id="titleBest">0</span></div>
+        <div class="title-foot"><span class="kbd">Enter</span> to play</div>
+      </div>
+    </div>
+
+    <div id="tutorialScreen" class="screen tutorial-screen" hidden>
+      <div class="tutorial-card" role="dialog" aria-modal="true" aria-labelledby="tutorialTitle">
+        <div class="tutorial-step" id="tutorialStep">1 / 6</div>
+        <div class="tutorial-art" id="tutorialArt"></div>
+        <h2 class="tutorial-title" id="tutorialTitle"></h2>
+        <div class="tutorial-body" id="tutorialBody"></div>
+        <div class="tutorial-dots" id="tutorialDots"></div>
+        <div class="tutorial-nav">
+          <button class="btn" id="tutorialSkip" type="button">Skip</button>
+          <span class="tutorial-spacer"></span>
+          <button class="btn" id="tutorialPrev" type="button">Back</button>
+          <button class="btn btn-primary" id="tutorialNext" type="button">Next</button>
+        </div>
+      </div>
     </div>
 
     <script type="module" src="/src/main.ts"></script>

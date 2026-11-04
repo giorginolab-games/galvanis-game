@@ -59,40 +59,54 @@ export interface FlashState {
   rightX: number;
   bolts: Bolt[] | null;
   high: boolean;
-}
-
-export interface RangeControl {
-  input: HTMLInputElement;
-  value: HTMLElement;
-}
-
-export interface ToggleControl {
-  input: HTMLInputElement;
+  /** Link in the current chain reaction (1 = first burn of the turn). */
+  chain: number;
 }
 
 export interface UiRefs {
   stage: HTMLDivElement;
-  gameOverOverlay: HTMLDivElement;
-  pieceCount: HTMLElement;
-  activeName: HTMLElement;
-  gameState: HTMLElement;
-  resetBtn: HTMLButtonElement;
+  hint: HTMLElement;
+  titleScreen: HTMLElement;
+  tutorialScreen: HTMLElement;
+  pauseOverlay: HTMLElement;
+  gameOverOverlay: HTMLElement;
+  score: HTMLElement;
+  best: HTMLElement;
+  titleBest: HTMLElement;
+  level: HTMLElement;
+  lines: HTMLElement;
+  levelBar: HTMLElement;
+  miniScore: HTMLElement;
+  miniLevel: HTMLElement;
+  miniPulse: HTMLElement;
+  nextCanvas: HTMLCanvasElement;
+  pulsePips: HTMLElement[];
+  pulseReady: HTMLElement;
+  finalScore: HTMLElement;
+  finalLevel: HTMLElement;
+  finalLines: HTMLElement;
+  finalChain: HTMLElement;
+  newBest: HTMLElement;
+  playBtn: HTMLButtonElement;
+  howBtn: HTMLButtonElement;
+  resumeBtn: HTMLButtonElement;
+  pauseHelpBtn: HTMLButtonElement;
+  quitBtn: HTMLButtonElement;
+  restartBtn: HTMLButtonElement;
+  overTitleBtn: HTMLButtonElement;
   pauseBtn: HTMLButtonElement;
-  spawnBtn: HTMLButtonElement;
-  scanBtn: HTMLButtonElement;
-  pulseCount: HTMLElement;
-  pulseBar: HTMLElement;
-  gravityY: RangeControl;
-  friction: RangeControl;
-  rest: RangeControl;
-  blockSize: RangeControl;
-  lockDelay: RangeControl;
-  insulatingChance: RangeControl;
-  bandX: RangeControl;
-  voltage: RangeControl;
-  highVoltage: RangeControl;
-  sleeping: ToggleControl;
-  freezeBlocks: ToggleControl;
-  showBand: ToggleControl;
-  eraseOnPath: ToggleControl;
+  helpBtn: HTMLButtonElement;
+  sfxButtons: HTMLButtonElement[];
+  musicButtons: HTMLButtonElement[];
+  touchButtons: HTMLButtonElement[];
+  tutorial: {
+    step: HTMLElement;
+    art: HTMLElement;
+    title: HTMLElement;
+    body: HTMLElement;
+    dots: HTMLElement;
+    prev: HTMLButtonElement;
+    next: HTMLButtonElement;
+    skip: HTMLButtonElement;
+  };
 }
