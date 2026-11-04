@@ -714,6 +714,16 @@ input[type="range"] {
   color: var(--muted);
 }
 
+.title-credit {
+  margin-top: 16px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.title-credit a {
+  color: inherit;
+}
+
 .tutorial-screen {
   z-index: 30;
   background: rgba(6, 8, 18, 0.82);
